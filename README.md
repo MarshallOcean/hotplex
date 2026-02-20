@@ -1,28 +1,32 @@
-# 🔥 HotPlex (Hot-Multiplexer)
+<p align="center">
+  <img src="docs/images/logo.svg" width="200" alt="hotplex logo">
+</p>
 
-> **From 5000ms 🐢 to 200ms 🚀. HotPlex keeps your AI agents hot.**
+# 🔥 hotplex
+
+> **From 5000ms 🐢 to 200ms 🚀. hotplex keeps your AI agents hot.**
 
 *Read this in other languages: [English](README.md), [简体中文](README_zh.md).*
 
-**HotPlex** is a high-performance **Process Multiplexer** designed specifically for running heavy, local AI CLI Agents (like Claude Code, OpenCode, Aider) in long-lived server or web environments. 
+**hotplex** is a high-performance **Process Multiplexer** designed specifically for running heavy, local AI CLI Agents (like Claude Code, OpenCode, Aider) in long-lived server or web environments. 
 
 It solves the "Cold Start" problem by keeping the underlying heavy Node.js or Python CLI processes alive and routing concurrent request streams (Hot-Multiplexing) into their Stdin/Stdout pipes.
 
-## 🚀 Why HotPlex?
+## 🚀 Why hotplex?
 
 Running local CLI agents from a backend service (like a Go API) usually means spawning a new OS process for *every single interaction*. 
 
 *   **The Problem:** Tools like `claude` (Claude Code) are heavy Node.js applications. Firing up `npx @anthropic-ai/claude-code` takes **3-5 seconds** just to boot up the V8 engine, read the filesystem context, and authenticate. For a real-time web UI, this latency makes the agent feel incredibly slow and unresponsive.
-*   **The Solution:** HotPlex boots the CLI process *once* per user/session, keeps it alive in the background (within a secure `pgid`), and establishes a persistent pipeline. When the user sends a new message, HotPlex instantly injects it via `Stdin` and streams the JSON responses back via `Stdout`. Latency drops from **5000ms to < 200ms**.
+*   **The Solution:** hotplex boots the CLI process *once* per user/session, keeps it alive in the background (within a secure `pgid`), and establishes a persistent pipeline. When the user sends a new message, hotplex instantly injects it via `Stdin` and streams the JSON responses back via `Stdout`. Latency drops from **5000ms to < 200ms**.
 
 ## 💡 Vision & Application Scenarios
 
-The original driving force behind HotPlex is to **empower AI applications to effortlessly integrate powerful CLI agents** (like Claude Code) as their external "muscles." Instead of reinventing the wheel to build coding, execution, and file-manipulation capabilities from scratch, your AI app can instantly borrow the immense capabilities of these mature CLI tools.
+The original driving force behind hotplex is to **empower AI applications to effortlessly integrate powerful CLI agents** (like Claude Code) as their external "muscles." Instead of reinventing the wheel to build coding, execution, and file-manipulation capabilities from scratch, your AI app can instantly borrow the immense capabilities of these mature CLI tools.
 
 Key Application Scenarios include:
 
-- **Web-based AI Agents**: Build a fully functional Web version of Claude Code. Users interact via a sleek browser UI while HotPlex reliably manages the persistent Claude CLI process in a sandboxed backend environment.
-- **DevOps Toolchains**: Integrate AI directly into your DevOps workflows. Have an agent autonomously execute shell scripts, read Kubernetes logs, and troubleshoot infrastructure issues over a persistent HotPlex session.
+- **Web-based AI Agents**: Build a fully functional Web version of Claude Code. Users interact via a sleek browser UI while hotplex reliably manages the persistent Claude CLI process in a sandboxed backend environment.
+- **DevOps Toolchains**: Integrate AI directly into your DevOps workflows. Have an agent autonomously execute shell scripts, read Kubernetes logs, and troubleshoot infrastructure issues over a persistent hotplex session.
 - **CI/CD Pipelines**: Embed intelligent code review, automated testing, and dynamic bug fixing right into your Jenkins, GitLab, or GitHub Actions pipelines without the latency overhead of spinning up heavy Node.js tools repeatedly.
 - **Intelligent Operations (AIOps)**: Create intelligent ops-bots that continuously monitor systems, analyze incident reports, and autonomously execute safe remediation commands via a controlled, hot-multiplexed terminal session.
 
@@ -38,18 +42,18 @@ Key Application Scenarios include:
 
 ### 📦 Architecture
 
-HotPlex is designed with a two-tier architecture:
+hotplex is designed with a two-tier architecture:
 
-![HotPlex Architecture](docs/images/topology.svg)
+![hotplex Architecture](docs/images/topology.svg)
 
 1.  **Core SDK (`pkg/hotplex`)**: The engine itself. It provides the `Engine` Singleton, `SessionPool`, and `Detector` (Security Firewall). It expects JSON streams from the CLI and emits strongly-typed Go events.
 2.  **Standalone Server (`cmd/hotplexd`)**: A lightweight wrapper around the SDK that exposes it over standard WebSockets.
 
 #### 🌊 Asynchronous Event Flow
 
-HotPlex leverages Go's concurrency for true full-duplex streaming:
+hotplex leverages Go's concurrency for true full-duplex streaming:
 
-![HotPlex Event Flow](docs/images/async-stream.svg)
+![hotplex Event Flow](docs/images/async-stream.svg)
 
 *Note: The current MVP is deeply optimized for **Claude Code's** full-duplex JSON protocol (`--input-format stream-json` & `--output-format stream-json`) but is designed with a future `Provider` interface abstraction in mind.*
 
@@ -117,12 +121,12 @@ err := engine.Execute(ctx, cfg, "Refactor the main.go file", func(eventType stri
 
 ## 🔒 Security Posture
 
-HotPlex executes LLM-generated shell code on your machine. **Use with caution.**
+hotplex executes LLM-generated shell code on your machine. **Use with caution.**
 
 We mitigate risks via:
 1.  **Native Capability Governance:** As of v0.2.0, we prioritize native tool restrictions (`AllowedTools`) over unstable path interception. This ensures the agent is only granted the specific muscles it needs.
 2.  **Danger Detector (WAF):** A regex-based layer intercepts and blocks destructive patterns (e.g., `mkfs`, `dd`, `rm -rf /`) before they reach the OS.
-3.  **Process Groups (PGID):** When a session is terminated, HotPlex sends `SIGKILL` to the entire negative Process Group ID (`-pgid`), guaranteeing that the CLI and all child/grandchild processes are instantly eradicated.
+3.  **Process Groups (PGID):** When a session is terminated, hotplex sends `SIGKILL` to the entire negative Process Group ID (`-pgid`), guaranteeing that the CLI and all child/grandchild processes are instantly eradicated.
 4.  **Context WorkDirs:** The agent is physically locked to the `WorkDir` provided in the Config.
 
 ## Roadmap
