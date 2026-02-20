@@ -69,6 +69,7 @@ import "github.com/hrygo/hotplex/pkg/hotplex"
 opts := hotplex.EngineOptions{
     Timeout: 5 * time.Minute,
     Logger:  logger,
+    PermissionMode: "bypassPermissions", // Global security constraint
     // InputCostPerMillion: 3.0, // Configure token pricing
 }
 
@@ -76,9 +77,9 @@ engine, _ := hotplex.NewEngine(opts)
 defer engine.Close()
 
 cfg := &hotplex.Config{
-    Mode:      "MVP",
-    WorkDir:   "/tmp",
-    SessionID: "user_123_session", // Deterministic Hot-Multiplexing ID
+    WorkDir:          "/tmp",
+    SessionID:        "user_123_session", // Deterministic Hot-Multiplexing ID
+    TaskSystemPrompt: "You are a helpful assistant.",
 }
 
 ctx := context.Background()

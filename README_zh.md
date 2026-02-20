@@ -69,16 +69,17 @@ import "github.com/hrygo/hotplex/pkg/hotplex"
 opts := hotplex.EngineOptions{
     Timeout: 5 * time.Minute,
     Logger:  logger,
-    // InputCostPerMillion: 3.0, // 配置 Token 计费策略
+    PermissionMode: "bypassPermissions", // 全局安全约束
+    // InputCostPerMillion: 3.0, // 配置 Token 计费价格
 }
 
 engine, _ := hotplex.NewEngine(opts)
 defer engine.Close()
 
 cfg := &hotplex.Config{
-    Mode:      "MVP",
-    WorkDir:   "/tmp",
-    SessionID: "user_123_session", // 确定性的热复用 ID
+    WorkDir:          "/tmp",
+    SessionID:        "user_123_session", // 确定性的热复用 ID
+    TaskSystemPrompt: "You are a helpful assistant.",
 }
 
 ctx := context.Background()
