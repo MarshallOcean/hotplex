@@ -43,8 +43,9 @@ When writing or refactoring Go code in HotPlex, you must enforce the following:
 HotPlex executes LLM-generated Shell commands on the host machine. **Security is the top priority.**
 
 1.  **Do Not Bypass `Detector`**: Never write code that allows user prompts or AI commands to reach `Stdin` without first passing through `CheckInput()` in `danger.go`.
-2.  **Filesystem Isolation**: The agent's `WorkDir` is holy. Never allow path traversal (`../`) out of the assigned `WorkDir` unless explicitly configured in `AllowedPaths`.
-3.  **No Eval/Shell Hacks**: Do not use `sh -c` or `bash -c` unless strictly necessary and sanitized. Stick to direct binary execution via `os/exec` where possible.
+2.  **Native Capability Governance**: As of v0.2.0, prioritize native tool restrictions (`AllowedTools` in `EngineOptions`) over file path interception. This leverages the CLI's internal sandbox for more reliable enforcement.
+3.  **Filesystem Isolation**: The agent's `WorkDir` is holy. Ensure the CLI is initialized with the correct working directory to leverage its native path restrictions.
+4.  **No Eval/Shell Hacks**: Do not use `sh -c` or `bash -c` unless strictly necessary and sanitized. Stick to direct binary execution via `os/exec` where possible.
 
 ---
 

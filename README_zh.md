@@ -26,42 +26,41 @@
 
 ## 🛠 特性概览
 
-- **极速热启动：** 首次启动后，后续请求瞬时响应。
-- **会话池与垃圾回收 (GC)：** 自动追踪空闲进程，并在可配置的超时时间（默认 30 分钟）后终止它们以释放内存。
-- **WebSocket 网关：** 包含一个开箱即用的独立服务器（`hotplexd`），将多路复用器原生暴露为 WebSocket 接口，供 React/Vue 前端或远程 Python/Node 脚本消费调用。
-- **原生 Go SDK：** 导入 `github.com/hrygo/hotplex/pkg/hotplex` 即可将引擎原生且直接地嵌入到您的 Go 后端中。
-- **正则安全防火墙：** 内置 `danger.go` 预检拦截器，在破坏性命令（例如 `rm -rf /`、Fork 炸弹、反向 Shell 等）抵达代理之前将其拦截。
-- **上下文隔离：** 利用 UUID v5 确定性命名空间生成机制，保证沙盒化的会话隔离（例如隔离不同用户的工作空间）。
+- **极速热启动：** 初始启动后，后续指令响应达到毫秒级。
+- **会话池自动回收 (GC)：** 自动跟踪空闲进程，并在超时（默认 30 分钟）后终止，节省内存。
+- **原生工具约束 (v0.2.0+)：** 在引擎层级通过 CLI 原生参数硬性限制智能体能力（例如禁用 `Bash` 或网络访问工具）。
+- **WebSocket 网关：** 包含一个开箱即用的服务器 (`hotplexd`)，原生支持 WebSockets 接入。
+- **原生 Go SDK：** 通过 `import "github.com/hrygo/hotplex/pkg/hotplex"` 直接嵌入到 Go 后端。
+- **正则安全防火墙：** 内置 `danger.go` 预检拦截器，在指令到达智能体前阻断破坏性命令（如 `rm -rf /`、Fork 炸弹等）。
+- **上下文隔离：** 使用 UUID v5 确定性命名空间生成算法，确保会话沙箱的逻辑隔离。
 
 ## 📦 架构设计
 
 HotPlex 采用两层架构设计：
 
-1.  **核心 SDK (`pkg/hotplex`)**: 引擎本体。包含 `Engine` 单例、`SessionPool`（会话池）以及 `Detector`（安全防火墙）。它负责接收来自 CLI 的 JSON 流，并对外发出强类型的 Go 事件。
-2.  **独立服务器 (`cmd/hotplexd`)**: 基于核心 SDK 包装的轻量级程序，通过标准的 WebSockets 将能力暴露出去。
+1.  **核心 SDK (`pkg/hotplex`)**：引擎本体，提供 `Engine` 单例、`SessionPool` 和 `Detector`（安全防火墙）。它接收 CLI 的 JSON 流并触发强类型的 Go 事件回调。
+2.  **独立服务端 (`cmd/hotplexd`)**：基于 SDK 封装的轻量级 WebSocket 服务器。
 
-*注意：当前的 MVP 版本对 **Claude Code** (`--output-format stream-json`) 协议进行了深度优化支持，但在设计上保留了 `Provider` 接口抽象的演进路径，未来可无缝支持 OpenCode 和 Aider 等工具。*
+*注意：当前 MVP 版本深度优化了 **Claude Code** 的协议 (`--output-format stream-json`)，但设计上已预留 `Provider` 接口以支持 OpenCode 和 Aider。*
 
 ## ⚡ 快速开始
 
-### 1. 运行独立的 WebSocket 服务器
+### 1. 运行 WebSocket 独立服务器
 
-如果您只想运行服务端的守护进程，并从前端或 Python 脚本连接它：
+如果你想直接运行服务器并通过前端或脚本连接：
 
 ```bash
-# 确保全局已安装 Claude Code
+# 确保已全局安装 Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# 编译并运行服务端
+# 编译并运行守护进程
 cd cmd/hotplexd
 go build -o hotplexd main.go
 ./hotplexd
 ```
-服务器运行在 `ws://localhost:8080/ws/v1/agent`。可参考 `_examples/websocket_client/client.js` 查看集成示例。
+服务器运行在 `ws://localhost:8080/ws/v1/agent`。参考 `_examples/websocket_client/client.js` 查看集成示例。
 
 ### 2. 使用 Go SDK 原生集成
-
-请查看 `_examples/basic_sdk/main.go` 获取完整示例。
 
 ```go
 import "github.com/hrygo/hotplex/pkg/hotplex"
@@ -69,39 +68,39 @@ import "github.com/hrygo/hotplex/pkg/hotplex"
 opts := hotplex.EngineOptions{
     Timeout: 5 * time.Minute,
     Logger:  logger,
-    PermissionMode: "bypassPermissions", // 全局安全约束
-    AllowedTools: []string{"Bash", "Edit"}, // 在 Engine 级别限制原生的工具能力
-    // InputCostPerMillion: 3.0, // 配置 Token 计费价格
+    PermissionMode: "bypass-permissions", // v0.2.0+ 推荐的权限处理模式
+    AllowedTools: []string{"Bash", "Edit"}, // 在引擎层级限制工具能力
 }
 
 engine, _ := hotplex.NewEngine(opts)
 defer engine.Close()
 
 cfg := &hotplex.Config{
-    WorkDir:          "/tmp",
-    SessionID:        "user_123_session", // 确定性的热复用 ID
-    TaskSystemPrompt: "You are a helpful assistant.",
+    WorkDir:          "/tmp/sandbox",
+    SessionID:        "user_123_session", // 确定性多路复用 ID
+    TaskSystemPrompt: "你是一名资深开发工程师。",
 }
 
 ctx := context.Background()
 
-// 1. 发送提示词 (Prompt) 并处理流式回调
-err := engine.Execute(ctx, cfg, "默默计算 20 乘 5", func(eventType string, data any) error {
-    if eventType == "assistant" {
-         fmt.Println("Agent generated text...")
+// 1. 发送 Prompt 并处理流式回调
+err := engine.Execute(ctx, cfg, "重构 main.go 文件", func(eventType string, data any) error {
+    if eventType == "answer" {
+         fmt.Println("智能体正在响应...")
     }
     return nil
 })
 ```
 
-## 🔒 核心安全姿态
+## 🔒 安全性
 
-HotPlex 将在您的机器上物理执行由大模型 (LLM) 生成的 Shell 命令。**请务必谨慎使用。**
+HotPlex 在你的机器上执行 LLM 生成的 Shell 代码。**请谨慎使用。**
 
-我们通过以下几道防线降低风险：
-1. **上下文目录限制 (WorkDirs)：** Agent 被沙盒化并限制在配置文件传入的 `WorkDir` 指定路径内操作。
-2. **危险拦截器 (Danger Detector)：** 一种基于正则的“WAF”（Web 应用防火墙），它会在破坏性模式（例如 `mkfs`, `dd`, `rm -rf /*`, `chmod 000 /`）触及操作系统底线之前实施前置拦截。
-3. **进程组连根拔起 (PGID)：** 当会话被外部调用终止时，HotPlex 会利用 `-pgid` 向整个底层系统进程组发送 `SIGKILL` 信号。这将保证不论是 CLI 主体、分离出去的 bash 脚本、还是衍生的子孙孙进程，都会被一瞬间彻底铲除，杜绝僵尸进程。
+我们通过以下手段降低风险：
+1.  **原生能力治理**：从 v0.2.0 开始，我们优先使用原生工具限制 (`AllowedTools`) 而非不稳定的路径拦截，确保智能体仅拥有必要的“肌肉”。
+2.  **指令预检 (WAF)**：基于正则的防御层，在指令下发前拦截破坏性模式（如 `mkfs`, `dd`, `rm -rf /`）。
+3.  **进程组隔离 (PGID)**：会话终止时，HotPlex 对整个进程组发送 `SIGKILL`，确保 CLI 及其产生的所有子进程被瞬间物理清除。
+4.  **工作目录锁定**：智能体被限制在 Config 中指定的 `WorkDir` 路径内。
 
 ## 路线图 (Roadmap)
 - [ ] 提取 Provider 接口 (增加对 `OpenCode` 的支持)

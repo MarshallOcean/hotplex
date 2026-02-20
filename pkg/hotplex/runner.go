@@ -15,8 +15,9 @@ import (
 // It allows customization of timeouts, logging, and foundational security boundaries
 // that apply to all sessions managed by this engine instance.
 type EngineOptions struct {
-	Timeout time.Duration // Maximum time to wait for a single execution turn to complete
-	Logger  *slog.Logger  // Optional logger instance; defaults to slog.Default()
+	Timeout     time.Duration // Maximum time to wait for a single execution turn to complete
+	IdleTimeout time.Duration // Time after which an idle session is eligible for termination
+	Logger      *slog.Logger  // Optional logger instance; defaults to slog.Default()
 
 	// Namespace is used to generate isolated, deterministic UUID v5 Session IDs.
 	// This ensures that the same Conversation ID creates an isolated but persistent sandbox,
@@ -59,6 +60,9 @@ func NewEngine(options EngineOptions) (HotPlexClient, error) {
 	if options.Timeout == 0 {
 		options.Timeout = 5 * time.Minute
 	}
+	if options.IdleTimeout == 0 {
+		options.IdleTimeout = 30 * time.Minute
+	}
 
 	if options.Namespace == "" {
 		options.Namespace = "default"
@@ -71,7 +75,7 @@ func NewEngine(options EngineOptions) (HotPlexClient, error) {
 		opts:           options,
 		cliPath:        cliPath,
 		logger:         logger,
-		manager:        NewSessionPool(logger, 30*time.Minute, options, cliPath), // Default 30m idle timeout
+		manager:        NewSessionPool(logger, options.IdleTimeout, options, cliPath), // User defined or default 30m
 		dangerDetector: dangerDetector,
 	}, nil
 }

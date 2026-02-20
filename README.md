@@ -28,10 +28,11 @@ Key Application Scenarios include:
 
 - **Blazing Fast Hot-Starts:** Instant response times after the initial boot.
 - **Session Pooling (GC):** Automatically tracks idle processes and terminates them after a configurable timeout (default 30m) to save RAM.
-- **WebSocket Gateway:** Includes a standalone batteries-included server (`hotplexd`) that exposes the multiplexer natively over WebSockets for consumption by React/Vue frontends or remote Python/Node scripts.
+- **Native Tool Constraints (v0.2.0+):** Hard-restrict agent capabilities (e.g., disabling `Bash` or `Internet` tools) at the engine level using native CLI flags.
+- **WebSocket Gateway:** Includes a standalone batteries-included server (`hotplexd`) that exposes the multiplexer natively over WebSockets.
 - **Native Go SDK:** Import `github.com/hrygo/hotplex/pkg/hotplex` to embed the engine directly into your Go backend.
-- **Regex Security Firewall:** Built-in `danger.go` pre-flight interceptor blocks destructive commands (`rm -rf /`, fork bombs, reverse shells) before they even reach the agent.
-- **Context Isolation:** Uses UUID v5 deterministic namespaces to guarantee sandboxed session isolation (e.g., separating user workspaces).
+- **Regex Security Firewall:** Built-in `danger.go` pre-flight interceptor blocks destructive commands (`rm -rf /`, fork bombs, etc.) before they even reach the agent.
+- **Context Isolation:** Uses UUID v5 deterministic namespaces to guarantee sandboxed session isolation.
 
 ## 📦 Architecture
 
@@ -40,7 +41,7 @@ HotPlex is designed with a two-tier architecture:
 1.  **Core SDK (`pkg/hotplex`)**: The engine itself. It provides the `Engine` Singleton, `SessionPool`, and `Detector` (Security Firewall). It expects JSON streams from the CLI and emits strongly-typed Go events.
 2.  **Standalone Server (`cmd/hotplexd`)**: A lightweight wrapper around the SDK that exposes it over standard WebSockets.
 
-*Note: The current MVP is deeply optimized for **Claude Code's** (`--output-format stream-json`) protocol but is designed with a future `Provider` interface abstraction in mind to support OpenCode and Aider.*
+*Note: The current MVP is deeply optimized for **Claude Code's** (`--output-format stream-json`) protocol but is designed with a future `Provider` interface abstraction in mind.*
 
 ## ⚡ Quick Start
 
@@ -61,34 +62,31 @@ Server runs on `ws://localhost:8080/ws/v1/agent`. Check `_examples/websocket_cli
 
 ### 2. Using the Go SDK Native Integration
 
-See `_examples/basic_sdk/main.go` for a full example.
-
 ```go
 import "github.com/hrygo/hotplex/pkg/hotplex"
 
 opts := hotplex.EngineOptions{
     Timeout: 5 * time.Minute,
     Logger:  logger,
-    PermissionMode: "bypassPermissions", // Global security constraint
-    AllowedTools: []string{"Bash", "Edit"}, // Restrict capabilities at the Engine level
-    // InputCostPerMillion: 3.0, // Configure token pricing
+    PermissionMode: "bypass-permissions", // Modern CLI permission handling
+    AllowedTools: []string{"Bash", "Edit"}, // Restrict capabilities at the Engine level (v0.2.0+)
 }
 
 engine, _ := hotplex.NewEngine(opts)
 defer engine.Close()
 
 cfg := &hotplex.Config{
-    WorkDir:          "/tmp",
+    WorkDir:          "/tmp/sandbox",
     SessionID:        "user_123_session", // Deterministic Hot-Multiplexing ID
-    TaskSystemPrompt: "You are a helpful assistant.",
+    TaskSystemPrompt: "You are a senior developer.",
 }
 
 ctx := context.Background()
 
 // 1. Send Prompt & handle streaming callback
-err := engine.Execute(ctx, cfg, "Calculate 20*5 silently", func(eventType string, data any) error {
-    if eventType == "assistant" {
-         fmt.Println("Agent generated text...")
+err := engine.Execute(ctx, cfg, "Refactor the main.go file", func(eventType string, data any) error {
+    if eventType == "answer" {
+         fmt.Println("Agent is responding...")
     }
     return nil
 })
@@ -99,9 +97,10 @@ err := engine.Execute(ctx, cfg, "Calculate 20*5 silently", func(eventType string
 HotPlex executes LLM-generated shell code on your machine. **Use with caution.**
 
 We mitigate risks via:
-1.  **Context WorkDirs:** The agent is sandboxed to the `WorkDir` provided in the Config.
-2.  **Danger Detector:** A regex-based "WAF" (Web Application Firewall) intercepts and blocks destructive patterns (e.g., `mkfs`, `dd`, `rm -rf /*`, `chmod 000 /`) before they reach the OS.
-3.  **Process Groups (PGID):** When a session is terminated, HotPlex sends `SIGKILL` to the entire negative Process Group ID (`-pgid`), guaranteeing that the CLI, any detached bash scripts, and grandchild processes are instantly eradicated without leaving zombies.
+1.  **Native Capability Governance:** As of v0.2.0, we prioritize native tool restrictions (`AllowedTools`) over unstable path interception. This ensures the agent is only granted the specific muscles it needs.
+2.  **Danger Detector (WAF):** A regex-based layer intercepts and blocks destructive patterns (e.g., `mkfs`, `dd`, `rm -rf /`) before they reach the OS.
+3.  **Process Groups (PGID):** When a session is terminated, HotPlex sends `SIGKILL` to the entire negative Process Group ID (`-pgid`), guaranteeing that the CLI and all child/grandchild processes are instantly eradicated.
+4.  **Context WorkDirs:** The agent is physically locked to the `WorkDir` provided in the Config.
 
 ## Roadmap
 - [ ] Provider interface extraction (support for `OpenCode`)

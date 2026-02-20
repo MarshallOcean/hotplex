@@ -82,14 +82,15 @@ type SessionManager interface {
 // It orchestrates the lifecycle of multiple CLI processes, ensuring that
 // idle processes are garbage collected to conserve system memory.
 type SessionPool struct {
-	sessions  map[string]*Session
-	mu        sync.RWMutex
-	logger    *slog.Logger
-	timeout   time.Duration // Time after which an idle session is eligible for termination
-	opts      EngineOptions // Global constraints shared by all sessions in the pool
-	cliPath   string        // Resolved path to the CLI binary (avoids redundant LookPath calls)
-	done      chan struct{} // Internal signal for shutting down background workers
-	markerDir string        // Local filesystem path storing session persistence markers (.lock files)
+	sessions     map[string]*Session
+	mu           sync.RWMutex
+	logger       *slog.Logger
+	timeout      time.Duration // Time after which an idle session is eligible for termination
+	opts         EngineOptions // Global constraints shared by all sessions in the pool
+	cliPath      string        // Resolved path to the CLI binary (avoids redundant LookPath calls)
+	done         chan struct{} // Internal signal for shutting down background workers
+	shutdownOnce sync.Once     // Ensures Shutdown is only executed once
+	markerDir    string        // Local filesystem path storing session persistence markers (.lock files)
 }
 
 // NewSessionPool creates a new session manager.
@@ -387,7 +388,8 @@ func (sm *SessionPool) startSession(ctx context.Context, sessionID string, cfg C
 	// Monitor process exit to prevent zombies and log unexpected crashes
 	go func() {
 		err := cmd.Wait()
-		if sessLog != nil {
+		// Check if the exit was unexpected (session not already closing/dead)
+		if sess.GetStatus() != SessionStatusDead && sessLog != nil {
 			sessLog.Warn("Session OS process exited unexpectedly",
 				"exit_error", err)
 		}
@@ -660,7 +662,9 @@ func (sm *SessionPool) cleanupIdleSessions() {
 
 // Shutdown gracefully stops the session manager and all active sessions.
 func (sm *SessionPool) Shutdown() {
-	close(sm.done)
+	sm.shutdownOnce.Do(func() {
+		close(sm.done)
+	})
 
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
