@@ -284,12 +284,6 @@ func TestErrors_Defined(t *testing.T) {
 	if ErrDangerBlocked == nil {
 		t.Error("ErrDangerBlocked should not be nil")
 	}
-	if ErrSessionTerminated == nil {
-		t.Error("ErrSessionTerminated should not be nil")
-	}
-	if ErrContextCancelled == nil {
-		t.Error("ErrContextCancelled should not be nil")
-	}
 	if ErrInvalidConfig == nil {
 		t.Error("ErrInvalidConfig should not be nil")
 	}
