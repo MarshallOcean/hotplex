@@ -111,6 +111,19 @@ console.log(result);
 await client.disconnect();
 ```
 
+## 📡 Protocol Notes
+
+### Request-Response Correlation
+All WebSocket requests support an optional `request_id` field. The server echoes this ID in responses, enabling proper correlation when sending concurrent requests on the same connection.
+
+```javascript
+// Request with request_id
+{ "request_id": "req-123", "cmd": "prompt", "data": "..." }
+
+// Response includes the same request_id
+{ "request_id": "req-123", "type": "answer", "data": "..." }
+```
+
 ## ⚙️ Configuration Hints
 - **`IDLE_TIMEOUT`**: Set this env var when running `hotplexd` to change how long idle processes stay alive (e.g., `IDLE_TIMEOUT=5m`).
 - **`PORT`**: Change the default `8080` port.
