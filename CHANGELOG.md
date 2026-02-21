@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0] - 2026-02-21
+
+### Added
+- **Provider Abstraction**: Introduced `provider.Provider` interface for multi-CLI support (Claude Code, OpenCode, Aider, etc.)
+- **Async WebSocket Execution**: Non-blocking task execution with context-based cancellation
+- **New WebSocket Commands**: `version`, `stats` for observability and telemetry
+- **Extended Error Types**: Added sentinel errors (`ErrSessionNotFound`, `ErrSessionDead`, `ErrTimeout`, `ErrInputTooLarge`, `ErrProcessStart`, `ErrPipeClosed`)
+
+### Changed
+- **Layered Architecture**: Refactored into clean package structure (`engine/`, `event/`, `types/`, `provider/`, `internal/`)
+- **JSON Field Naming**: Standardized all API responses to `snake_case` for consistency
+- **SDK Package Structure**: Flattened to root level for simpler imports
+
+### Fixed
+- **Concurrency Safety**: Resolved deadlock in `Shutdown()`, data race in `Session.close()`
+- **Resource Leaks**: Properly close stdin/stdout/stderr pipes on session termination
+- **Process Lifecycle**: `cmd.Wait()` now updates session status and notifies callbacks
+- **Security Detection**: Added nested command, null byte, and control character detection in WAF
+- **Windows Compatibility**: Used absolute path for `taskkill` in process termination
+
+### Security
+- **Admin Token Warning**: Added startup validation for admin token configuration
+- **WAF Bypass Prevention**: Enhanced regex patterns to detect obfuscated malicious commands
+
+### Refactored
+- **Examples**: Consolidated WebSocket examples into unified `client.js` with full lifecycle demo
+
+
 ## [v0.6.2] - 2026-02-21
 
 ### Added
