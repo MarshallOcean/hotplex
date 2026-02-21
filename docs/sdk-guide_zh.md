@@ -1,0 +1,176 @@
+# HotPlex SDK 开发者手册 (Go)
+
+*查看其他语言: [English](sdk-guide.md), [简体中文](sdk-guide_zh.md).*
+
+欢迎使用 HotPlex SDK！本手册旨在指导开发者如何将 HotPlex 强大的 AI 智能体运行时 (Agent Runtime) 集成到自己的 Go 应用程序中。
+
+---
+
+## 1. 核心理念
+
+HotPlex 的核心哲学是 **"利用胜于构建 (Leverage vs Build)"**。我们不重新发明 AI 智能体，而是通过 SDK 将顶级的终端 AI 工具（如 Claude Code, OpenCode）转化为生产就绪的后端服务：
+- **热复用 (Hot-Multiplexing)**：消除进程冷启动延迟，实现毫秒级响应。
+- **安全隔离**：提供进程组 (PGID) 隔离和指令级 WAF 审计。
+- **协议标准化**：将多样化的 CLI 输出归一化为统一的流式事件。
+
+---
+
+## 2. 快速开始
+
+### 2.1 安装
+
+```bash
+go get github.com/hrygo/hotplex
+```
+
+### 2.2 基础使用示例
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+    "github.com/hrygo/hotplex"
+)
+
+func main() {
+    // 1. 初始化引擎
+    engine, _ := hotplex.NewEngine(hotplex.EngineOptions{
+        Namespace: "my_app",
+        Timeout:   5 * time.Minute,
+    })
+    defer engine.Close()
+
+    // 2. 配置执行参数
+    cfg := &hotplex.Config{
+        WorkDir:   "/tmp/project",
+        SessionID: "user_session_123",
+    }
+
+    // 3. 定义流式回调
+    callback := func(eventType string, data any) error {
+        if eventType == "answer" {
+            if evt, ok := data.(*hotplex.EventWithMeta); ok {
+                fmt.Print(evt.EventData)
+            }
+        }
+        return nil
+    }
+
+    // 4. 执行指令
+    ctx := context.Background()
+    engine.Execute(ctx, cfg, "帮我写一个快速排序算法", callback)
+}
+```
+
+---
+
+## 3. 核心 API 详解
+
+### 3.1 `EngineOptions` (引擎初始化配置)
+用于 `hotplex.NewEngine(opts)`，定义引擎的全局行为边界。
+
+| 字段               | 类型            | 说明                                                                           |
+| :----------------- | :-------------- | :----------------------------------------------------------------------------- |
+| `Namespace`        | `string`        | **命名空间**。用于生成确定性的 UUID v5 SessionID，确保多租户间的会话物理隔离。 |
+| `Timeout`          | `time.Duration` | **执行超时**。单次 `Execute` 调用的最大允许时间（默认 5 分钟）。               |
+| `IdleTimeout`      | `time.Duration` | **空闲回收时间**。后台进程超过此时间无活动将被自动清理（默认 30 分钟）。       |
+| `BaseSystemPrompt` | `string`        | **引擎级系统提示词**。在进程启动时注入，作为所有会话的底层行为准则。           |
+| `PermissionMode`   | `string`        | **权限模式**。如 `"bypass-permissions"` (自动授权) 或 `"default"`。            |
+| `AllowedTools`     | `[]string`      | **工具白名单**。显式允许智能体使用的工具列表（如 `["Bash", "Edit"]`）。        |
+| `DisallowedTools`  | `[]string`      | **工具黑名单**。显式禁止智能体使用的工具列表。                                 |
+| `AdminToken`       | `string`        | **管理令牌**。用于在运行时通过安全审计接口越权或调整策略的凭证。               |
+| `Logger`           | `*slog.Logger`  | **结构化日志**。注入该实例以维持应用整体的观测一致性。                         |
+| `Provider`         | `Provider`      | **驱动程序**。可选，用于手动指定底层智能体实现（默认使用 Claude Code）。       |
+
+### 3.2 `Config` (单次任务配置)
+用于 `engine.Execute(ctx, cfg, prompt, cb)`，定义当前任务的具体环境。
+
+| 字段               | 类型     | 说明                                                         |
+| :----------------- | :------- | :----------------------------------------------------------- |
+| `WorkDir`          | `string` | **工作目录**。智能体执行文件操作、搜索和脚本运行的根目录。   |
+| `SessionID`        | `string` | **会话 ID**。业务层 ID，HotPlex 将其映射为唯一的后台热进程。 |
+| `TaskSystemPrompt` | `string` | **任务级系统提示词**。仅对当前轮次生效，拼接在用户提示词前。 |
+
+### 3.3 事件回调与数据模型 (`Callback`)
+`Callback` 的定义为 `func(eventType string, data any) error`。
+
+#### 事件类型 (`eventType`)
+- `thinking`: 智能体逻辑推理中。
+- `tool_use`: 开始调用本地工具（如 `bash`, `editor_write`）。
+- `tool_result`: 工具执行完毕返回结果。
+- `answer`: 智能体生成的回复文本片段。
+- `session_stats`: 会话最终统计（仅在成功结束时触发一次）。
+- `danger_block`: 安全火墙拦截告警。
+- `runner_exit`: 底层进程意外退出。
+
+#### 详细元数据 (`EventMeta`)
+除 `session_stats` 外，大部分事件的 `data` 为 `*hotplex.EventWithMeta`。其 `Meta` 包含：
+- `DurationMs`: 当前步骤耗时。
+- `TotalDurationMs`: 累计总耗时。
+- `ToolName` / `ToolID`: 调用的工具名称及唯一 ID。
+- `Status`: 执行状态（`running`, `success`, `error`）。
+- `InputSummary` / `OutputSummary`: 工具输入参数的摘要及输出结果的截断预览。
+- `FilePath` / `LineCount`: 涉及的文件路径及影响的行数。
+- `Progress`: 进度百分比（针对长耗时任务）。
+- `InputTokens` / `OutputTokens`: 当前步骤的 Token 消耗。
+
+#### 最终统计 (`SessionStatsData`)
+`session_stats` 事件的 `data` 为 `*hotplex.SessionStatsData`：
+- `InputTokens` / `OutputTokens`: 会话全过程总 Token。
+- `CacheReadTokens` / `CacheWriteTokens`: 提示词缓存的命中与写入。
+- `TotalDurationMs`: 从请求开始到结束的总毫秒数。
+- `ToolCallCount`: 总工具调用次数。
+- `ToolsUsed`: 调用的工具名称列表（去重）。
+- `FilesModified`: 实际产生修改的文件数。
+- `TotalCostUSD`: 该轮通话的预估美金成本。
+- `IsError`: 执行是否以失败告终。
+
+---
+
+## 4. 错误处理
+
+HotPlex 导出了以下核心错误变量，用于业务逻辑判断：
+
+- `hotplex.ErrDangerBlocked`: 用户的 Prompt 或智能体的操作触发了安全正则 WAF，被强制拦截。
+- `hotplex.ErrInvalidConfig`: 传入的 `Config` 或 `EngineOptions` 参数校验不通过（如路径不存在）。
+
+---
+
+## 5. 安全与隔离
+
+HotPlex 默认提供以下安全特性：
+1. **指令级 WAF**：自动过滤高危指令（如 `rm -rf /`）。
+2. **进程组隔离**：确保智能体及其产生的任何子进程都能被强制清理。
+3. **能力约束**：通过 `AllowedTools` 在语义层面限制智能体的能力。
+
+---
+
+## 5. 进阶特性
+
+### 5.1 多 Provider 支持
+HotPlex 支持多种底座智能体，您可以通过配置文件或代码动态注册新的 Provider。
+- **Claude Code**: 极致的代码编辑和执行能力。
+- **OpenCode**: 灵活的开源智能体支持。
+
+### 5.2 统计与观测
+每次会话结束时，`session_stats` 事件会返回详细的 `SessionStatsData`：
+- `TotalDurationMs`: 总耗时。
+- `InputTokens` / `OutputTokens`: Token 消耗。
+- `TotalCostUSD`: 实时估算的财务成本。
+- `FilesModified`: 修改的文件数量。
+
+---
+
+## 6. 最佳实践
+
+1. **会话生命周期管理**：程序退出时务必调用 `engine.Close()` 以清理所有僵尸进程。
+2. **Context 控制**：始终为 `Execute` 传递带有超时或取消信号的 `context.Context`，以防止无限等待。
+3. **并发安全**：回调函数由流式协程触发，若在回调中操作外部资源，请注意并发安全。
+4. **Namespace 隔离**：在多租户环境下，利用不同的 `Namespace` 确保环境隔离。
+
+---
+
+*更多详情请参考 `_examples/` 目录下的完整示例代码。*

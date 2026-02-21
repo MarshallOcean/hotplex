@@ -9,15 +9,18 @@ import (
 
 	"github.com/hrygo/hotplex/event"
 	intengine "github.com/hrygo/hotplex/internal/engine"
+	"github.com/hrygo/hotplex/provider"
 	"github.com/hrygo/hotplex/types"
 )
 
 // TestEngine_dispatchCallback tests the dispatchCallback method
 func TestEngine_dispatchCallback(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -79,9 +82,11 @@ func TestEngine_dispatchCallback(t *testing.T) {
 
 func TestEngine_handleThinkingEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -111,9 +116,11 @@ func TestEngine_handleThinkingEvent(t *testing.T) {
 
 func TestEngine_handleToolUseEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -163,9 +170,11 @@ func TestEngine_handleToolUseEvent(t *testing.T) {
 
 func TestEngine_handleToolResultEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -216,9 +225,11 @@ func TestEngine_handleToolResultEvent(t *testing.T) {
 
 func TestEngine_handleAssistantEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -274,9 +285,11 @@ func TestEngine_handleAssistantEvent(t *testing.T) {
 
 func TestEngine_handleDefaultEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	msg := types.StreamMessage{
@@ -300,9 +313,11 @@ func TestEngine_handleDefaultEvent(t *testing.T) {
 
 func TestEngine_handleUserEvent(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test"}
@@ -360,10 +375,12 @@ func TestEngine_handleStreamRawLine(t *testing.T) {
 	mockMgr := &mockSessionManager{sessions: make(map[string]*intengine.Session)}
 	mockMgr.sessions["test-session"] = intengine.NewTestSession("test-session", intengine.SessionStatusBusy)
 
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:    EngineOptions{Namespace: "test"},
-		logger:  logger,
-		manager: mockMgr,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		manager:  mockMgr,
+		provider: prv,
 	}
 
 	stats := &SessionStats{SessionID: "test-session"}
@@ -448,10 +465,12 @@ func TestEngine_handleResultMessage(t *testing.T) {
 	mockMgr := &mockSessionManager{sessions: make(map[string]*intengine.Session)}
 	mockMgr.sessions["test-session"] = intengine.NewTestSession("test-session", intengine.SessionStatusBusy)
 
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:    EngineOptions{Namespace: "test"},
-		logger:  logger,
-		manager: mockMgr,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		manager:  mockMgr,
+		provider: prv,
 	}
 
 	stats := &SessionStats{

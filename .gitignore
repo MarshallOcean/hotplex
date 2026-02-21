@@ -2,6 +2,7 @@
 /cmd/hotplexd/hotplexd
 dist/
 bin/
+build/
 *.exe
 *.exe~
 *.dll

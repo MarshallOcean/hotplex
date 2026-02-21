@@ -11,8 +11,8 @@ Please read and strictly adhere to the following rules when analyzing, modifying
 **HotPlex** is a high-performance **AI Agent Control Plane**.
 - **First Principle**: Instead of reinventing the wheel, we leverage existing, powerful AI CLI agents (like Claude Code, Aider, OpenCode) and bridge them into production-grade systems. We upgrade "human-oriented terminal tools" into "system-oriented cloud-native operators."
 - **Core Role**: It provides a production-ready execution environment for AI agents, solving the "cold start" latency for local tools and providing a unified control layer for security, state, and streaming.
-- **Primary Language**: Go (Golang) 1.21+
-- **Architecture**: A lightweight Gateway (WebSocket) wrapping a Core Engine (`hotplex.Engine`), a persistence layer (`SessionPool`), and a strict Regex WAF (`Detector`).
+- **Primary Language**: Go (Golang) 1.24
+- **Architecture**: A lightweight Gateway (WebSocket) wrapping a Core Engine (`hotplex.Engine`), a persistence layer (`internal/engine/pool.go`), and a strict Regex WAF (`internal/security/detector.go`).
 
 ### 📍 Repository
 
@@ -28,7 +28,7 @@ When writing or refactoring Go code in HotPlex, you must enforce the following:
 
 1.  **Single Responsibility Principle (SRP)**:
     - Never dump mixed responsibilities into one struct or file.
-    - Example: `runner.go` should only bridge I/O and OS processes. Session lifecycle belongs in `session_manager.go`. Danger detection belongs in `danger.go`.
+    - Example: `runner.go` should only bridge I/O and OS processes. Session lifecycle belongs in `internal/engine/pool.go`. Danger detection belongs in `internal/security/detector.go`.
 2.  **Concurrency Safety First**:
     - **Never** read/write to `SessionPool` maps without holding the appropriate `sync.RWMutex`.
     - Always use `defer mu.Unlock()` immediately after acquiring a lock.
@@ -49,7 +49,7 @@ When writing or refactoring Go code in HotPlex, you must enforce the following:
 
 HotPlex executes LLM-generated Shell commands on the host machine. **Security is the top priority.**
 
-1.  **Do Not Bypass `Detector`**: Never write code that allows user prompts or AI commands to reach `Stdin` without first passing through `CheckInput()` in `danger.go`.
+1.  **Do Not Bypass `Detector`**: Never write code that allows user prompts or AI commands to reach `Stdin` without first passing through `CheckInput()` in `internal/security/detector.go`.
 2.  **Native Capability Governance**: As of v0.2.0, prioritize native tool restrictions (`AllowedTools` in `EngineOptions`) over file path interception. This leverages the CLI's internal sandbox for more reliable enforcement.
 3.  **Filesystem Isolation**: The agent's `WorkDir` is holy. Ensure the CLI is initialized with the correct working directory to leverage its native path restrictions.
 4.  **No Eval/Shell Hacks**: Do not use `sh -c` or `bash -c` unless strictly necessary and sanitized. Stick to direct binary execution via `os/exec` where possible.
@@ -60,17 +60,26 @@ HotPlex executes LLM-generated Shell commands on the host machine. **Security is
 
 When looking for where to make changes, follow this map:
 
-- `pkg/hotplex/`: **The Core SDK.** (Do not put HTTP/CLI logic here).
-  - `runner.go`: The `Engine` singleton. High-level API.
-  - `session_manager.go`: `SessionPool` and GC loops. State management.
-  - `danger.go`: The Regex WAF. (Add new scary commands to reject here).
-  - `events.go`: Data structures for JSON STDOUT parsing.
-- `cmd/hotplexd/`: **The Executable.**
-  - `main.go`: Application entrypoint. Wires dependency injection.
-- `internal/server/`: **The Adapters.**
-  - `websocket.go`: HTTP to WebSocket upgrade and JSON RPC framing over WS.
-- `docs/`: **Knowledge Base.**
-  - `architecture.md`: `@docs/architecture.md` (Design & Diagrams)
+- **Public SDK (`/`)**:
+  - `hotplex.go`: Main entry point with public aliases.
+  - `client.go`: Client interface definitions.
+- **Engine Layer (`engine/`)**:
+  - `runner.go`: The `Engine` singleton. High-level API orchestration.
+- **Provider Layer (`provider/`)**:
+  - `provider.go`: `Provider` interface.
+  - `claude_provider.go` / `opencode_provider.go`: Individual tool adapters.
+  - `factory.go` / `registry.go`: Provider instantiation and caching.
+- **Internal Core (`internal/engine/`)**:
+  - `pool.go`: `SessionPool` (process multiplexing) and GC loops.
+  - `session.go`: Individual `Session` I/O piping and state machine.
+- **Internal Security (`internal/security/`)**:
+  - `detector.go`: The Regex WAF. (Add new scary commands to reject here).
+- **Internal Systems (`internal/sys/`)**:
+  - `proc_unix.go` / `proc_windows.go`: PGID and signal handling.
+- **Adapters (`internal/server/`)**:
+  - `websocket.go`: WebSocket upgrade and framing.
+- **Types & Events (`types/`, `event/`)**:
+  - Core data structures and streaming protocols.
 
 ---
 

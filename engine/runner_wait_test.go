@@ -8,14 +8,17 @@ import (
 	"time"
 
 	intengine "github.com/hrygo/hotplex/internal/engine"
+	"github.com/hrygo/hotplex/provider"
 	"github.com/hrygo/hotplex/types"
 )
 
 func TestEngine_createEventBridge(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -50,9 +53,11 @@ func TestEngine_createEventBridge(t *testing.T) {
 
 func TestEngine_createEventBridge_RawLine(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -91,10 +96,12 @@ func TestEngine_createEventBridge_ResultMessage(t *testing.T) {
 	mockMgr := &mockSessionManager{sessions: make(map[string]*intengine.Session)}
 	mockMgr.sessions["test-session"] = intengine.NewTestSession("test-session", intengine.SessionStatusBusy)
 
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:    EngineOptions{Namespace: "test"},
-		logger:  logger,
-		manager: mockMgr,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		manager:  mockMgr,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -145,9 +152,11 @@ func TestEngine_createEventBridge_ResultMessage(t *testing.T) {
 
 func TestEngine_createEventBridge_SystemMessage(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -188,9 +197,11 @@ func TestEngine_createEventBridge_SystemMessage(t *testing.T) {
 
 func TestEngine_createEventBridge_NonStreamMessage(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -226,10 +237,12 @@ func TestEngine_createEventBridge_WithCallback(t *testing.T) {
 	mockMgr := &mockSessionManager{sessions: make(map[string]*intengine.Session)}
 	mockMgr.sessions["test-session"] = intengine.NewTestSession("test-session", intengine.SessionStatusBusy)
 
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:    EngineOptions{Namespace: "test"},
-		logger:  logger,
-		manager: mockMgr,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		manager:  mockMgr,
+		provider: prv,
 	}
 
 	cfg := &types.Config{
@@ -268,9 +281,11 @@ func TestEngine_createEventBridge_WithCallback(t *testing.T) {
 
 func TestEngine_createEventBridge_RawLineNotString(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	prv, _ := provider.NewClaudeCodeProvider(provider.ProviderConfig{}, logger)
 	engine := &Engine{
-		opts:   EngineOptions{Namespace: "test"},
-		logger: logger,
+		opts:     EngineOptions{Namespace: "test"},
+		logger:   logger,
+		provider: prv,
 	}
 
 	cfg := &types.Config{

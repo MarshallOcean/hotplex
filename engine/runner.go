@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -260,24 +259,13 @@ func (r *Engine) executeWithMultiplex(
 
 	sess.SetCallback(intengine.Callback(r.createEventBridge(cfg, callback, stats, doneChan)))
 
-	// Inject Task-level constraints into the prompt for Hot-Multiplexing
-	finalPrompt := prompt
-	if cfg.TaskSystemPrompt != "" {
-		finalPrompt = fmt.Sprintf("[%s]\n\n%s", cfg.TaskSystemPrompt, prompt)
+	// Build provider-specific input message payload
+	msgPayload, err := r.provider.BuildInputMessage(prompt, cfg.TaskSystemPrompt)
+	if err != nil {
+		return fmt.Errorf("build input message: %w", err)
 	}
 
-	// Build stream-json user message payload
-	msgPayload := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role": "user",
-			"content": []map[string]any{
-				{"type": "text", "text": finalPrompt},
-			},
-		},
-	}
-
-	// Send user message to CLI stdin
+	// Send message to CLI stdin
 	if err := sess.WriteInput(msgPayload); err != nil {
 		return fmt.Errorf("write input: %w", err)
 	}
@@ -363,30 +351,34 @@ func (r *Engine) createEventBridge(cfg *types.Config, callback event.Callback, s
 }
 
 func (r *Engine) handleStreamRawLine(line string, cfg *types.Config, stats *SessionStats, callback event.Callback, doneChan chan struct{}) error {
-	var msg types.StreamMessage
-	if err := json.Unmarshal([]byte(line), &msg); err != nil {
+	// Use Provider to parse the raw line into a normalized ProviderEvent
+	pevt, err := r.provider.ParseEvent(line)
+	if err != nil {
+		r.logger.Warn("Engine: provider failed to parse event", "error", err, "line", line)
+		// Fallback: send as raw answer if parsing fails
 		if callbackSafe := event.WrapSafe(r.logger, callback); callbackSafe != nil {
 			_ = callbackSafe("answer", line)
 		}
 		return nil
 	}
 
-	if msg.Type == "result" {
-		r.handleResultMessage(msg, stats, cfg, callback)
+	// Detect if this event indicates the turn is over
+	if r.provider.DetectTurnEnd(pevt) {
+		r.handleNormalizedResult(pevt, stats, cfg, callback)
 		closeDoneChan(doneChan)
 		return nil
 	}
 
-	if msg.Type == "error" {
+	if pevt.Type == provider.EventTypeError {
 		closeDoneChan(doneChan)
 	}
 
-	if msg.Type == "system" {
+	if pevt.Type == provider.EventTypeSystem {
 		return nil
 	}
 
 	if callback != nil {
-		return r.dispatchCallback(msg, callback, stats)
+		return r.dispatchNormalizedCallback(pevt, callback, stats)
 	}
 	return nil
 }
@@ -397,6 +389,137 @@ func closeDoneChan(doneChan chan struct{}) {
 	default:
 		close(doneChan)
 	}
+}
+
+// handleNormalizedResult processes the final turn event and finalizes stats
+func (r *Engine) handleNormalizedResult(pevt *provider.ProviderEvent, stats *SessionStats, cfg *types.Config, callback event.Callback) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	// Update final duration and tokens from provider metadata if available
+	if pevt.Metadata != nil {
+		if pevt.Metadata.TotalDurationMs > 0 {
+			stats.TotalDurationMs = pevt.Metadata.TotalDurationMs
+		}
+		stats.InputTokens = pevt.Metadata.InputTokens
+		stats.OutputTokens = pevt.Metadata.OutputTokens
+		stats.CacheWriteTokens = pevt.Metadata.CacheWriteTokens
+		stats.CacheReadTokens = pevt.Metadata.CacheReadTokens
+	}
+
+	// Prepare final telemetry package
+	toolsUsed := make([]string, 0, len(stats.ToolsUsed))
+	for tool := range stats.ToolsUsed {
+		toolsUsed = append(toolsUsed, tool)
+	}
+
+	// Deduplicate file paths
+	filePathsSet := make(map[string]bool)
+	for _, p := range stats.FilePaths {
+		if p != "" {
+			filePathsSet[p] = true
+		}
+	}
+	filePaths := make([]string, 0, len(filePathsSet))
+	for p := range filePathsSet {
+		filePaths = append(filePaths, p)
+	}
+
+	costUSD := 0.0
+	if pevt.Metadata != nil {
+		costUSD = pevt.Metadata.TotalCostUSD
+	}
+
+	r.logger.Info("Engine: turn completed with normalized provider event",
+		"namespace", r.opts.Namespace,
+		"session_id", cfg.SessionID,
+		"duration_ms", stats.TotalDurationMs,
+		"cost_usd", costUSD)
+
+	// Dispatch stats event
+	if callback != nil {
+		callbackSafe := event.WrapSafe(r.logger, callback)
+		_ = callbackSafe("session_stats", &event.SessionStatsData{
+			SessionID:       cfg.SessionID,
+			StartTime:       stats.StartTime.Unix(),
+			EndTime:         time.Now().Unix(),
+			TotalDurationMs: stats.TotalDurationMs,
+			InputTokens:     stats.InputTokens,
+			OutputTokens:    stats.OutputTokens,
+			TotalTokens:     stats.InputTokens + stats.OutputTokens,
+			ToolCallCount:   stats.ToolCallCount,
+			ToolsUsed:       toolsUsed,
+			FilesModified:   stats.FilesModified,
+			FilePaths:       filePaths,
+			ModelUsed:       r.provider.Name(),
+			TotalCostUSD:    costUSD,
+			IsError:         pevt.IsError,
+			ErrorMessage:    pevt.Error,
+		})
+	}
+
+	// Set session back to Ready
+	if sess, ok := r.manager.GetSession(cfg.SessionID); ok {
+		sess.SetStatus(intengine.SessionStatusReady)
+	}
+}
+
+// dispatchNormalizedCallback dispatches normalized provider events to the client callback
+func (r *Engine) dispatchNormalizedCallback(pevt *provider.ProviderEvent, callback event.Callback, stats *SessionStats) error {
+	if stats == nil {
+		return nil
+	}
+
+	totalDur := time.Since(stats.StartTime).Milliseconds()
+
+	switch pevt.Type {
+	case provider.EventTypeThinking:
+		stats.StartThinking()
+		defer stats.EndThinking()
+		meta := &event.EventMeta{Status: "running", TotalDurationMs: totalDur}
+		return callback("thinking", event.NewEventWithMeta("thinking", pevt.Content, meta))
+
+	case provider.EventTypeToolUse:
+		stats.EndThinking()
+		stats.RecordToolUse(pevt.ToolName, pevt.ToolID)
+		meta := &event.EventMeta{
+			ToolName:        pevt.ToolName,
+			ToolID:          pevt.ToolID,
+			Status:          "running",
+			TotalDurationMs: totalDur,
+			InputSummary:    types.SummarizeInput(pevt.ToolInput),
+		}
+		return callback("tool_use", event.NewEventWithMeta("tool_use", pevt.ToolName, meta))
+
+	case provider.EventTypeToolResult:
+		dur := stats.RecordToolResult()
+		meta := &event.EventMeta{
+			ToolName:        pevt.ToolName,
+			ToolID:          pevt.ToolID,
+			Status:          pevt.Status,
+			DurationMs:      dur,
+			TotalDurationMs: totalDur,
+			OutputSummary:   types.TruncateString(pevt.Content, 500),
+		}
+		return callback("tool_result", event.NewEventWithMeta("tool_result", pevt.Content, meta))
+
+	case provider.EventTypeAnswer:
+		stats.EndThinking()
+		stats.StartGeneration()
+		meta := &event.EventMeta{TotalDurationMs: totalDur}
+		return callback("answer", event.NewEventWithMeta("answer", pevt.Content, meta))
+
+	case provider.EventTypeError:
+		return callback("error", pevt.Error)
+
+	default:
+		// Fallback for other event types
+		if pevt.Content != "" {
+			return callback("answer", pevt.Content)
+		}
+	}
+
+	return nil
 }
 
 // handleResultMessage processes the result message from CLI, extracts statistics,
@@ -470,7 +593,7 @@ func (r *Engine) handleResultMessage(msg types.StreamMessage, stats *SessionStat
 			ToolsUsed:            toolsUsed,
 			FilesModified:        stats.FilesModified,
 			FilePaths:            filePaths,
-			ModelUsed:            "claude-code",
+			ModelUsed:            r.provider.Name(),
 			TotalCostUSD:         totalCostUSD,
 			IsError:              msg.IsError,
 			ErrorMessage:         msg.Error,

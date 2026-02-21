@@ -25,7 +25,7 @@ Our **First Principle** is to leverage and bridge existing elite AI CLI tools (l
 
 ## 🛠 Development Setup
 
-1. Install Go 1.21 or later.
+1. Install Go 1.24 or later.
 2. Install Claude Code CLI: `curl -fsSL https://claude.ai/install.sh | bash`.
 3. Clone your fork: `git clone https://github.com/YOUR_USERNAME/HotPlex.git`.
 4. Run tests: `go test ./...`.
