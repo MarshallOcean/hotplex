@@ -84,17 +84,17 @@ sequenceDiagram
 
 ---
 
-## 4. Current Status vs Roadmap
+## 4. Feature Matrix
 
-### Implemented (v0.2.x)
-- [x] Clean Architecture with `internal/` isolation.
-- [x] Strategy-based Provider pattern (Claude Code, OpenCode).
-- [x] Resilient Session Hot-Multiplexing.
-- [x] Multi-platform PGID management (Windows Job Objects / Unix PGID).
-- [x] Regex-based Security WAF.
+### Core Capabilities
+- [x] Clean Architecture with `internal/` isolation
+- [x] Strategy-based Provider pattern (Claude Code, OpenCode)
+- [x] Resilient Session Hot-Multiplexing
+- [x] Multi-platform PGID management (Windows Job Objects / Unix PGID)
+- [x] Regex-based Security WAF
 
-### Planned (Roadmap)
-- **L2/L3 Isolation**: Integrating Linux Namespaces (PID/Net) and WASM sandboxing.
-- **Event Hooks**: Plugin system for custom audit sinks and Slack notifications.
-- **Observability (OTel)**: Native tracing for tracing latencies from prompt landing to tool execution.
-- **Multi-Agent Bus**: Orchestrating multiple specialized agents behind a single namespace.
+### Planned Enhancements
+- **L2/L3 Isolation**: Integrating Linux Namespaces (PID/Net) and WASM sandboxing
+- **Event Hooks**: Plugin system for custom audit sinks and Slack notifications
+- **Observability (OTel)**: Native tracing for tracing latencies from prompt landing to tool execution
+- **Multi-Agent Bus**: Orchestrating multiple specialized agents behind a single namespace

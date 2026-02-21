@@ -84,17 +84,17 @@ sequenceDiagram
 
 ---
 
-## 4. 现状与演进路线图
+## 4. 功能矩阵
 
-### 已实现 (v0.6.x)
-- [x] 具备 `internal/` 隔离的清洁架构。
-- [x] 基于策略模式的 Provider 机制 (Claude Code, OpenCode)。
-- [x] 弹性的会话热复用 (Hot-Multiplexing)。
-- [x] 跨平台 PGID 管理 (Windows Job Objects / Unix PGID)。
-- [x] 基于正则的安全 WAF。
+### 核心能力
+- [x] 具备 `internal/` 隔离的清洁架构
+- [x] 基于策略模式的 Provider 机制 (Claude Code, OpenCode)
+- [x] 弹性的会话热复用 (Hot-Multiplexing)
+- [x] 跨平台 PGID 管理 (Windows Job Objects / Unix PGID)
+- [x] 基于正则的安全 WAF
 
-### 规划中 (Roadmap)
-- **L2/L3 级隔离**：集成 Linux Namespace (PID/Net) 与 WASM 沙箱。
-- **事件钩子**：支持自定义审计解析与 Slack 通知插件。
-- **可观测性 (OTel)**：原生集成 Trace，量化从请求到达至工具执行的毫秒级分布。
-- **多智能体总线**：在单一命名空间下编排多个专业化智能体。
+### 规划增强
+- **L2/L3 级隔离**：集成 Linux Namespace (PID/Net) 与 WASM 沙箱
+- **事件钩子**：支持自定义审计解析与 Slack 通知插件
+- **可观测性 (OTel)**：原生集成 Trace，量化从请求到达至工具执行的毫秒级分布
+- **多智能体总线**：在单一命名空间下编排多个专业化智能体

@@ -69,8 +69,6 @@ func main() {
 
 ## 3. Core API Reference
 
-## 3. Core API Reference
-
 ### 3.1 `EngineOptions` (Engine Initialization)
 Used in `hotplex.NewEngine(opts)` to define global behavior boundaries.
 
@@ -194,7 +192,7 @@ HotPlex provides out-of-the-box security:
 
 ---
 
-## 5. Advanced Features
+## 6. Advanced Features
 
 ### 5.1 Multi-Provider Support
 HotPlex supports various underlying agents. You can register providers dynamically:
@@ -210,7 +208,7 @@ At the end of each session, the `session_stats` event returns `SessionStatsData`
 
 ---
 
-## 6. Best Practices
+## 7. Best Practices
 
 1. **Lifecycle Management**: Always call `engine.Close()` on application exit to prevent zombie processes.
 2. **Cancellation**: Use `context.Context` with timeouts for `Execute` to prevent hanging sessions.
