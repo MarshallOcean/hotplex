@@ -92,13 +92,11 @@ func main() {
 	// CASE 3: Manual Termination
 	// ---------------------------------------------------------
 	fmt.Printf("\n[4] Explicitly Stopping Session...\n")
-	if eng, ok := engine.(*hotplex.Engine); ok {
-		err = eng.StopSession(sessionID, "Done with task")
-		if err != nil {
-			fmt.Printf("Stop failed: %v\n", err)
-		} else {
-			fmt.Println("Session terminated successfully.")
-		}
+	err = engine.StopSession(sessionID, "Done with task")
+	if err != nil {
+		fmt.Printf("Stop failed: %v\n", err)
+	} else {
+		fmt.Println("Session terminated successfully.")
 	}
 
 	fmt.Println("\n=== Demo Complete ===")
