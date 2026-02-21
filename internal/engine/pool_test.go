@@ -1,4 +1,4 @@
-package hotplex
+package engine
 
 import (
 	"context"
@@ -98,7 +98,7 @@ func TestMonitorStartup_Error(t *testing.T) {
 }
 
 func TestMonitorStartup_Timeout(t *testing.T) {
-	ctx, cancel := createTestContextWithTimeout(1 * 1000000) // 1ms timeout
+	ctx, cancel := createTestContextWithTimeout(1 * time.Millisecond)
 	defer cancel()
 
 	startedCh := make(chan error, 1)
@@ -118,7 +118,7 @@ func TestMonitorStartup_Timeout(t *testing.T) {
 
 func TestSessionPool_buildCLIArgs(t *testing.T) {
 	logger := newTestLogger()
-	pool := NewSessionPool(logger, 30*1000000000, EngineOptions{
+	pool := NewSessionPool(logger, 30*time.Minute, EngineOptions{
 		Namespace:        "test",
 		PermissionMode:   "bypass-permissions",
 		AllowedTools:     []string{"bash", "edit"},
@@ -153,16 +153,16 @@ func TestSessionPool_buildCLIArgs_Resume(t *testing.T) {
 	logger := newTestLogger()
 
 	// Create pool with marker directory
-	pool := NewSessionPool(logger, 30*1000000000, EngineOptions{
+	pool := NewSessionPool(logger, 30*time.Minute, EngineOptions{
 		Namespace: "test",
 	}, "/tmp/claude")
 
 	// Create a marker file to simulate existing session
 	markerPath := pool.markerDir + "/existing-session.lock"
-	if err := osWriteFile(markerPath, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(markerPath, []byte(""), 0644); err != nil {
 		t.Fatalf("Failed to create marker file: %v", err)
 	}
-	defer func() { _ = osRemove(markerPath) }()
+	defer func() { _ = os.Remove(markerPath) }()
 
 	args := pool.buildCLIArgs("existing-session", logger)
 
@@ -178,18 +178,18 @@ func createTestCommand() *exec.Cmd {
 }
 
 func createTestContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 5*1000000000)
+	return context.WithTimeout(context.Background(), 5*time.Second)
 }
 
 func createTestContextWithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), timeout)
 }
 
-// Avoid importing os and context in test file
-var osWriteFile = func(name string, data []byte, perm uint32) error {
-	return os.WriteFile(name, data, os.FileMode(perm))
-}
-
-var osRemove = func(name string) error {
-	return os.Remove(name)
+func containsInSlice(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
