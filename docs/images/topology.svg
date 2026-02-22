@@ -102,7 +102,7 @@
 
   <!-- Layer 3: OS Layer -->
   <rect x="50" y="600" width="900" height="160" rx="12" class="layer-sandbox"/>
-  <text x="70" y="625" class="text-layer">3. OS Process Layer (Isolated Sandbox)</text>
+  <text x="500" y="625" text-anchor="middle" class="text-layer">3. OS Process Layer (Isolated Sandbox)</text>
 
   <g transform="translate(100, 650)">
     <rect width="800" height="80" rx="10" fill="#fff" stroke="#495057" stroke-width="2" />
@@ -123,9 +123,8 @@
   <path d="M 815 380 L 815 410" class="arrow" />
 
   <!-- Layer 2 to Layer 3 -->
-  <!-- Process Fork line moved slightly right to avoid '3. OS Process...' title -->
-  <path d="M 185 550 L 185 590 L 300 590 L 300 645" class="arrow" marker-end="url(#arrowhead)"/>
-  <text x="310" y="595" class="text-code" style="fill:#0366d6">Process Fork &amp; PGID</text>
+  <path d="M 185 550 L 185 645" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="195" y="595" class="text-code" style="fill:#0366d6">Process Fork &amp; PGID</text>
   
   <path d="M 815 550 L 815 645" class="arrow" marker-end="url(#arrowhead)"/>
   <text x="650" y="595" class="text-code" style="fill:#0366d6">Full-Duplex I/O Stream</text>
