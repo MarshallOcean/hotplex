@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.3] - 2026-02-22
+
+### Added
+- **Event Hooks System**: Introduced a pluggable hook system in `hooks/` package, supporting Webhooks and structured Logging.
+- **Performance Benchmarks**: Added comprehensive benchmarking suite (`engine/benchmark_test.go`) and published the first official Performance Report (`docs/benchmark-report.md`).
+- **SDK Enhancements**: 
+  - Added public error aliases in the root `hotplex` package for better developer experience.
+  - Added detailed error handling examples in `_examples/go_error_handling/`.
+
+### Changed
+- **Brand Positioning**: Pivot from "Control Plane" to **"Cli-as-a-Service"** engine, emphasizing the transformation of one-off CLI tools into persistent interactive services.
+- **Documentation Overhaul**: Updated `README.md`, `README_zh.md`, `AGENT.md`, and Architecture documents to align with the new strategic positioning.
+- **Roadmap 2026**: Published the updated roadmap for 2026 in `docs/roadmap-2026.md`.
+
+### Removed
+- **Aider Integration**: Formally removed all references and planned support for Aider to focus on Claude Code and OpenCode ecosystems.
+
+### Fixed
+- **Code Quality**: Resolved lint errors in the webhook implementation related to response body closing.
+
 ## [v0.8.2] - 2026-02-22
 
 ### Fixed
