@@ -1,5 +1,7 @@
 # HotPlex Examples
 
+🌐 [中文版 (Chinese)](README_zh.md)
+
 This directory contains examples of how to use the HotPlex SDK and Proxy Server.
 
 ## 📁 Examples Structure
@@ -27,7 +29,13 @@ A comprehensive Go demo showing the end-to-end lifecycle of an OpenCode session:
 - **Session Persistence**: How HotPlex maintains provider-specific session state.
 - **Warm Start Recovery**: Resuming previous sessions using SessionID.
 
-### 5. [Claude WebSocket Client (Node.js)](./node_claude_websocket)
+### 5. [OpenCode HTTP Client (Python)](./python_opencode_http)
+A Python client demonstrating the REST + SSE interaction pattern for the OpenCode compatibility layer:
+- **SSE Listening**: Real-time event streaming using `requests`.
+- **Session Management**: RESTful session creation and message posting.
+- **Event Mapping**: Mapping OpenCode "Parts" to human-readable console output.
+
+### 6. [Claude WebSocket Client (Node.js)](./node_claude_websocket)
 
 | File                   | Description                                                                                                |
 | :--------------------- | :--------------------------------------------------------------------------------------------------------- |
@@ -87,6 +95,13 @@ go run _examples/go_opencode_basic/main.go
 go run _examples/go_opencode_lifecycle/main.go
 ```
 
+### Running the Python Example
+```bash
+cd _examples/python_opencode_http
+pip install requests
+python client.py
+```
+
 ### Running the WebSocket Examples
 
 1. Start the HotPlex Proxy Server:
@@ -105,6 +120,22 @@ go run _examples/go_opencode_lifecycle/main.go
    # Enterprise Demo
    node enterprise_client.js
    ```
+
+### Running the OpenCode HTTP API (cURL)
+
+Verify the OpenCode compatibility layer:
+```bash
+# 1. Create a session
+curl -X POST http://localhost:8080/session
+
+# 2. Establish event stream (in a separate terminal)
+curl -N http://localhost:8080/global/event
+
+# 3. Send a prompt
+curl -X POST http://localhost:8080/session/<id>/message \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "Write a python script to list files"}'
+```
 
 ### Using Enterprise Client as a Module
 ```javascript
@@ -137,10 +168,10 @@ All WebSocket requests support an optional `request_id` field. The server echoes
 
 ```javascript
 // Request with request_id
-{ "request_id": "req-123", "cmd": "prompt", "data": "..." }
+{ "request_id": 123, "type": "execute", "prompt": "..." }
 
 // Response includes the same request_id
-{ "request_id": "req-123", "type": "answer", "data": "..." }
+{ "request_id": 123, "event": "answer", "data": "..." }
 ```
 
 ## ⚙️ Configuration Hints
