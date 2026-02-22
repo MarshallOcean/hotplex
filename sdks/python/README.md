@@ -1,8 +1,20 @@
 # HotPlex Python SDK
 
-Production-ready Python client for the [HotPlex](https://github.com/hrygo/hotplex) AI Agent Control Plane.
+The **HotPlex Python SDK** is a production-ready client that transforms elite AI CLI tools (like Claude Code or OpenCode) into long-lived, interactive services (Cli-as-a-Service).
 
-## Installation
+Instead of dealing with the multi-second spin-up latency of starting CLIs in headless mode, this SDK allows your Python applications to communicate with a persistent HotPlex session via high-performance WebSocket streams.
+
+## 🛠 Prerequisites
+
+This SDK is a client-side library. To use it, you must have a running **HotPlex Server** (`hotplexd`) which acts as the execution bridge for the AI agents.
+
+1.  **Install the HotPlex Server**: Follow the [HotPlex Main Repository](https://github.com/hrygo/hotplex) instructions to build and run `hotplexd`.
+2.  **Start the Server**:
+    ```bash
+    PORT=8080 ./dist/hotplexd
+    ```
+
+## 📦 Installation
 
 ```bash
 pip install hotplex
@@ -96,15 +108,15 @@ client = HotPlexClient(config=config)
 
 ## Event Types
 
-| Event | Description |
-|-------|-------------|
-| `thinking` | Agent is thinking |
-| `answer` | Streaming text response |
-| `tool_use` | Tool invocation started |
-| `tool_result` | Tool execution result |
+| Event           | Description              |
+| --------------- | ------------------------ |
+| `thinking`      | Agent is thinking        |
+| `answer`        | Streaming text response  |
+| `tool_use`      | Tool invocation started  |
+| `tool_result`   | Tool execution result    |
 | `session_stats` | Final session statistics |
-| `error` | Error occurred |
-| `danger_block` | Blocked by WAF |
+| `error`         | Error occurred           |
+| `danger_block`  | Blocked by WAF           |
 
 ## License
 
