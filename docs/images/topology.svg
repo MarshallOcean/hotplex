@@ -108,10 +108,10 @@
   </g>
 
   <!-- Connecting Lines -->
-  <!-- Layer 1 to Layer 2: Straight Down Lines -->
-  <path d="M 225 195 L 225 295" class="arrow" marker-end="url(#arrowhead)"/>
+  <!-- Layer 1 to Layer 2: Converging stepped lines -->
+  <path d="M 225 195 L 225 245 L 500 245" class="arrow" />
+  <path d="M 775 195 L 775 245 L 500 245" class="arrow" />
   <path d="M 500 195 L 500 295" class="arrow" marker-end="url(#arrowhead)"/>
-  <path d="M 775 195 L 775 295" class="arrow" marker-end="url(#arrowhead)"/>
 
   <!-- Inside Engine to Sub-components -->
   <path d="M 185 380 L 185 405" class="arrow" marker-end="url(#arrowhead)"/>
