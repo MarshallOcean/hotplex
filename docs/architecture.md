@@ -96,9 +96,9 @@ sequenceDiagram
 - [x] Multi-platform PGID management (Windows Job Objects / Unix PGID)
 - [x] Regex-based Security WAF
 - [x] **Dual Protocol Gateway**: Native WebSocket and OpenCode-compatible REST/SSE API
+- [x] **Event Hooks**: Plugin system for Webhooks, Slack, and custom audit sinks
+- [x] **Observability**: OpenTelemetry native tracing and Prometheus metrics (`/metrics`)
 
 ### Planned Enhancements
 - **L2/L3 Isolation**: Integrating Linux Namespaces (PID/Net) and WASM sandboxing
-- **Event Hooks**: Plugin system for custom audit sinks and Slack notifications
-- **Observability (OTel)**: Native tracing for tracing latencies from prompt landing to tool execution
 - **Multi-Agent Bus**: Orchestrating multiple specialized agents behind a single namespace

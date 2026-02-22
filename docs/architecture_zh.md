@@ -96,9 +96,9 @@ sequenceDiagram
 - [x] 跨平台 PGID 管理 (Windows Job Objects / Unix PGID)
 - [x] 基于正则的安全 WAF
 - [x] **双协议网关**：原生 WebSocket 与 OpenCode 兼容的 REST/SSE API
+- [x] **事件钩子 (Event Hooks)**：支持 Webhook 及多种自定义审计通知接收器
+- [x] **可观测性**：原生集成 OpenTelemetry 追踪与 Prometheus 性能指标 (`/metrics`)
 
 ### 规划增强
 - **L2/L3 级隔离**：集成 Linux Namespace (PID/Net) 与 WASM 沙箱
-- **事件钩子**：支持自定义审计解析与 Slack 通知插件
-- **可观测性 (OTel)**：原生集成 Trace，量化从请求到达至工具执行的毫秒级分布
 - **多智能体总线**：在单一命名空间下编排多个专业化智能体
