@@ -1,5 +1,6 @@
 # .goreleaser.yaml
-# Build and release configuration for HotPlex
+# Build and release configuration for HotPlex (v2 syntax)
+version: 2
 
 before:
   hooks:
@@ -23,7 +24,7 @@ archives:
   - name_template: "hotplex_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [ zip ]
     files:
       - LICENSE
       - README.md
@@ -33,7 +34,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ incpatch .Tag }}-next"
 
 changelog:
   sort: asc
