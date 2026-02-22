@@ -5,6 +5,7 @@ export default defineConfig({
   description: 'Transforming AI CLI Agents into Production-Ready Interactive Services',
   lang: 'en-US',
   base: '/hotplex/',
+  ignoreDeadLinks: true,
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
