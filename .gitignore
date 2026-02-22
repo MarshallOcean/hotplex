@@ -33,3 +33,7 @@ Thumbs.db
 .env.*.local
 *.pem
 *.key
+
+# Release Notes temporary files
+RELEASE_NOTES.md
+release_notes_*.txt
