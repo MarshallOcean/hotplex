@@ -5,10 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.7.4] - 2026-02-22
+## [v0.8.0] - 2026-02-22
+
+### Added
+- **OpenCode Provider Support**: Integrated `OpenCodeProvider` to support the OpenCode CLI ecosystem alongside Claude Code.
+- **Dual-Protocol Proxy Server**: `hotplexd` now acts as a comprehensive proxy server supporting both native WebSocket and OpenCode-compatible HTTP/SSE protocols.
+- **OpenCode HTTP API**: Implementation of `POST /session`, `GET /global/event` (SSE), and `POST /session/{id}/message` for seamless integration with OpenCode clients.
+- **New Examples**: Added comprehensive Python and Go examples for the OpenCode provider and HTTP API.
 
 ### Changed
-- **Semantic XML Refinement**: Renamed XML tags from `<task>`/`<user_input>` to `<context>`/`<user_query>`. This correctly distinguishes between background metadata/session-level instructions and the immediate user request, preventing semantic ambiguity for the LLM.
+- **Server Package Refactoring**: Renamed and restructured server-related files (`hotplex_ws.go`, `opencode_http.go`, `security.go`) for better semantic clarity and maintainability.
+- **Brand Normalization**: Unified project branding to lowercase `hotplex` across all documentation and visual assets.
+- **Documentation Overhaul**: Synchronized all documentation (README, AGENT.md, SDK Guide) and architecture maps with the latest codebase and dual-protocol features.
+- **SDK Naming Correlation**: Aligned `ClientRequest`/`ServerResponse` JSON field names with the internal protocol for better consistency.
+
+### Refactored
+- **Internal Engine Types**: Renamed `TaskSystemPrompt` to `TaskInstructions` and moved Engine/Session options to internal packages to prevent circular dependencies.
+- **Session ID Persistence**: Enhanced mapping of business identifiers to deterministic UUID v5 sessions.
+
+## [v0.7.4] - 2026-02-22
 
 ## [v0.7.3] - 2026-02-22
 
