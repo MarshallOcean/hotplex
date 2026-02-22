@@ -30,17 +30,15 @@ archives:
       - README.md
       - README_zh.md
 
+release:
+  release_notes_file: RELEASE_NOTES.md
+
 checksum:
   name_template: 'checksums.txt'
 
 snapshot:
   version_template: "{{ incpatch .Tag }}-next"
 
+# Disable automatic changelog generation to prevent overwriting
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - Merged
+  disable: true
