@@ -56,37 +56,36 @@ find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/images|/images|g' {
 find docs-site -name "*.md" -type f -exec sed -i.bak 's|\./images|/images|g' {} +
 find docs-site -name "*.md" -type f -exec sed -i.bak 's|\.github/assets|/assets|g' {} +
 
-# Fix Bilingual Cross-links
-# Go SDK Links
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/sdk-guide\.md|/sdks/go-sdk.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/sdk-guide_zh\.md|/sdks/go-sdk_zh.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|sdk-guide\.md|/sdks/go-sdk.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|sdk-guide_zh\.md|/sdks/go-sdk_zh.md|g' {} +
-
+# Fix Bilingual Cross-links & Internal VitePress Links using regex (sed -E)
 # Architecture Links
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/architecture\.md|/guide/architecture.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/architecture_zh\.md|/guide/architecture_zh.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|architecture\.md|/guide/architecture.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|architecture_zh\.md|/guide/architecture_zh.md|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?architecture(_zh)?(\.md)?\)|](/guide/architecture\2.md)|g' {} +
+
+# Go SDK Links
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?sdk-guide(_zh)?(\.md)?\)|](/sdks/go-sdk\2.md)|g' {} +
 
 # OpenCode Links
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/providers/opencode\.md|/guide/opencode-http.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/providers/opencode_zh\.md|/guide/opencode-http_zh.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|providers/opencode\.md|/guide/opencode-http.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|providers/opencode_zh\.md|/guide/opencode-http_zh.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|opencode\.md|/guide/opencode-http.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|opencode_zh\.md|/guide/opencode-http_zh.md|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(providers/)?opencode(_zh)?(\.md)?\)|](/guide/opencode-http\3.md)|g' {} +
 
 # API Reference Links
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/server/api\.md|/reference/api.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|docs/server/api_zh\.md|/reference/api_zh.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|server/api\.md|/reference/api.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|server/api_zh\.md|/reference/api_zh.md|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(server/)?api(_zh)?(\.md)?\)|](/reference/api\3.md)|g' {} +
 
-# Getting Started / README Links
-# Be careful not to replace external URLs containing README.md, but the pattern is specific enough
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|README\.md|/guide/getting-started.md|g' {} +
-find docs-site -name "*.md" -type f -exec sed -i.bak 's|README_zh\.md|/guide/getting-started_zh.md|g' {} +
+# Getting Started / README Links (Match exact README.md or README_zh.md)
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?README(_zh)?\.md\)|](/guide/getting-started\1.md)|g' {} +
+
+# Other Internal Guides rewritten for VitePress
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?quick-start(\.md)?\)|](/guide/quick-start.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?observability-guide(\.md)?\)|](/guide/observability.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?docker-deployment(\.md)?\)|](/guide/docker.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?production-guide(\.md)?\)|](/guide/deployment.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?benchmark-report(\.md)?\)|](/guide/performance.md)|g' {} +
+
+# Redirect GitHub-only URLs (Examples, CONTRIBUTING, LICENSE, Roadmap, ClaudeCode)
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?\.\./_examples/([^)]*)\)|](https://github.com/hrygo/hotplex/tree/main/_examples/\1)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?_examples/([^)]*)\)|](https://github.com/hrygo/hotplex/tree/main/_examples/\1)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?CONTRIBUTING(\.md)?\)|](https://github.com/hrygo/hotplex/blob/main/CONTRIBUTING.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?LICENSE\)|](https://github.com/hrygo/hotplex/blob/main/LICENSE)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?docs/roadmap-2026(\.md)?\)|](https://github.com/hrygo/hotplex/blob/main/docs/roadmap-2026.md)|g' {} +
+find docs-site -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(providers/)?claudecode(_zh)?(\.md)?\)|](https://github.com/hrygo/hotplex/blob/main/docs/providers/claudecode\3.md)|g' {} +
 
 # Clean up sed backups
 find docs-site -name "*.bak" -type f -delete
