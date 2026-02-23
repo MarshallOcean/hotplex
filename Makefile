@@ -20,7 +20,7 @@ BUILD_TIME    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 LDFLAGS       := -s -w -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT)' -X 'main.BuildTime=$(BUILD_TIME)'
 
-.PHONY: all help build build-all fmt vet test test-unit test-race test-integration test-all lint tidy clean install-hooks run docs
+.PHONY: all help build build-all fmt vet test test-unit test-race test-integration test-all lint tidy clean install-hooks run docs svg2png
 
 # Default target
 all: help
@@ -30,6 +30,12 @@ docs: ## Synchronize SSOT Markdown sources into docs-site
 	@chmod +x scripts/sync_docs.sh 2>/dev/null || true
 	@./scripts/sync_docs.sh
 
+svg2png: ## Convert all SVG files to 4K PNG
+	@printf "${CYAN}🖼️  Converting SVG to PNG...${NC}\n"
+	@chmod +x scripts/svg2png.sh 2>/dev/null || true
+	@./scripts/svg2png.sh
+	@printf "${GREEN}✅ PNG assets generated in docs/images/png/${NC}\n"
+
 ## 📋 Help: Show available commands
 help: ## Show this help message
 	@printf "\n"
@@ -37,7 +43,7 @@ help: ## Show this help message
 	@printf "Usage: make ${YELLOW}<target>${NC}\n"
 	@printf "\n"
 	@printf "${BOLD}Management Targets:${NC}\n"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  ${YELLOW}%-18s${NC} %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "  ${YELLOW}%-18s${NC} %s\n", $$1, $$2}'
 	@printf "\n"
 
 build: fmt vet tidy ## Compile the hotplexd daemon
