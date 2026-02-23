@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/hotplex/',
 
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico' }],
+    ['link', { rel: 'icon', href: '/hotplex/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#00ADD8' }],
   ],
 
