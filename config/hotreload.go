@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -41,14 +42,14 @@ func NewHotReloader(path string, initialConfig any, logger *slog.Logger) (*HotRe
 func (h *HotReloader) load() error {
 	data, err := os.ReadFile(h.path)
 	if err != nil {
-		return err
+		return fmt.Errorf("read config %s: %w", h.path, err)
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if err := json.Unmarshal(data, h.config); err != nil {
-		return err
+		return fmt.Errorf("parse config: %w", err)
 	}
 
 	h.logger.Info("Config loaded", "path", h.path)
@@ -58,14 +59,14 @@ func (h *HotReloader) load() error {
 func (h *HotReloader) Start(ctx context.Context) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return err
+		return fmt.Errorf("create watcher: %w", err)
 	}
 
 	h.watcher = watcher
 
 	if err := watcher.Add(h.path); err != nil {
 		_ = watcher.Close()
-		return err
+		return fmt.Errorf("watch path %s: %w", h.path, err)
 	}
 
 	go h.watchLoop(ctx)

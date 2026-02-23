@@ -232,12 +232,12 @@ func (p *ProviderBase) ValidateBinary() (string, error) {
 func (p *ProviderBase) GetVersion() (string, error) {
 	path, err := p.ValidateBinary()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("validate binary: %w", err)
 	}
 	cmd := exec.Command(path, "--version")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("get version: %w", err)
 	}
 	return string(output), nil
 }

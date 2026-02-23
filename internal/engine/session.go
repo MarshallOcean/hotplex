@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os/exec"
@@ -64,6 +65,13 @@ func (s *Session) Touch() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.LastActive = time.Now()
+}
+
+// GetLastActive returns the last active time with proper locking.
+func (s *Session) GetLastActive() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.LastActive
 }
 
 // SetStatus updates the session status with proper locking.
@@ -144,14 +152,14 @@ func (s *Session) WriteInput(msg map[string]any) error {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("json marshal: %w", err)
 	}
 
 	data = append(data, '\n')
 
 	_, err = s.stdin.Write(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("stdin write: %w", err)
 	}
 
 	s.LastActive = time.Now()

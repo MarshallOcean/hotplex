@@ -115,8 +115,8 @@ func (r *Engine) Execute(ctx context.Context, cfg *types.Config, prompt string, 
 		// Send danger block event to client (non-critical - error already being returned)
 		if callbackSafe := event.WrapSafe(r.logger, callback); callbackSafe != nil {
 			_ = callbackSafe("danger_block", dangerEvent)
-		// Track danger block in telemetry
-		telemetry.GetMetrics().IncDangersBlocked()
+			// Track danger block in telemetry
+			telemetry.GetMetrics().IncDangersBlocked()
 		}
 		return types.ErrDangerBlocked
 	}
