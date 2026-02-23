@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,15 +11,11 @@ import (
 	"github.com/hrygo/hotplex/event"
 )
 
-// ExecutionController orchestrates engine executions for all protocol handlers.
-// It resolves DRY violations by centralizing context timeouts, Config building,
-// and engine invocation.
 type ExecutionController struct {
 	engine hotplex.HotPlexClient
 	logger *slog.Logger
 }
 
-// NewExecutionController creates a new ExecutionController.
 func NewExecutionController(engine hotplex.HotPlexClient, logger *slog.Logger) *ExecutionController {
 	return &ExecutionController{
 		engine: engine,
@@ -26,7 +23,6 @@ func NewExecutionController(engine hotplex.HotPlexClient, logger *slog.Logger) *
 	}
 }
 
-// ExecutionRequest represents a protocol-agnostic execution request.
 type ExecutionRequest struct {
 	SessionID    string
 	Prompt       string
@@ -35,7 +31,6 @@ type ExecutionRequest struct {
 	Timeout      time.Duration
 }
 
-// Execute orchestrates the engine execution.
 func (c *ExecutionController) Execute(ctx context.Context, req ExecutionRequest, cb event.Callback) error {
 	sessionID := req.SessionID
 	if sessionID == "" {
@@ -44,8 +39,9 @@ func (c *ExecutionController) Execute(ctx context.Context, req ExecutionRequest,
 
 	workDir := req.WorkDir
 	if workDir == "" {
-		workDir = "/tmp/hotplex_sandbox" // Default fallback
+		workDir = "/tmp/hotplex_sandbox"
 	}
+	workDir = filepath.Clean(workDir)
 
 	timeout := req.Timeout
 	if timeout == 0 {
@@ -62,6 +58,11 @@ func (c *ExecutionController) Execute(ctx context.Context, req ExecutionRequest,
 	}
 
 	c.logger.Info("Controller: starting engine execution", "session_id", sessionID)
+
+	if err := c.engine.ValidateConfig(cfg); err != nil {
+		c.logger.Error("Controller: config validation failed", "session_id", sessionID, "error", err)
+		return err
+	}
 
 	err := c.engine.Execute(taskCtx, cfg, req.Prompt, cb)
 	if err != nil {

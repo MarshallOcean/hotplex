@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
+	"unsafe"
 )
 
 var (
@@ -14,45 +16,141 @@ var (
 	taskkillPathOnce sync.Once
 )
 
-// SetupCmdSysProcAttr configures the command for Windows (No PGID support).
-func SetupCmdSysProcAttr(cmd *exec.Cmd) {
-	// Windows does not use Setpgid or process groups in the same way as Unix.
-	// For deeper isolation on Windows, Job Objects would be required.
+const (
+	JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+	JOB_OBJECT_LIMIT_BREAKAWAY_OK      = 0x800
+)
+
+type JOBOBJECT_BASIC_LIMIT_INFORMATION struct {
+	PerProcessUserTimeLimit int64
+	PerJobUserTimeLimit     int64
+	LimitFlags              uint32
+	MinimumWorkingSetSize   uintptr
+	MaximumWorkingSetSize   uintptr
+	ActiveProcessLimit      uint32
+	Affinity                uintptr
+	PriorityClass           uint32
+	SchedulingClass         uint32
 }
 
-// KillProcessGroup terminates the process and its children on Windows (#10).
-// Uses taskkill /F /T /PID to kill the entire process tree.
+type JOBOBJECT_EXTENDED_LIMIT_INFORMATION struct {
+	BasicLimitInformation JOBOBJECT_BASIC_LIMIT_INFORMATION
+	IoInfo                struct {
+		ReadOperationCount  uint64
+		WriteOperationCount uint64
+		ReadTransferCount   uint64
+		WriteTransferCount  uint64
+	}
+	ProcessMemoryLimit    uintptr
+	JobMemoryLimit        uintptr
+	PeakProcessMemoryUsed uintptr
+	PeakJobMemoryUsed     uintptr
+}
+
+var (
+	kernel32DLL              *syscall.DLL
+	createJobObjectW         *syscall.Proc
+	setInformationJobObject  *syscall.Proc
+	assignProcessToJobObject *syscall.Proc
+	jobObjectInitOnce        sync.Once
+	jobObjectInitErr         error
+)
+
+func initJobObjectAPI() error {
+	jobObjectInitOnce.Do(func() {
+		kernel32DLL = syscall.NewLazyDLL("kernel32.dll")
+
+		createJobObjectW = kernel32DLL.NewProc("CreateJobObjectW")
+		if createJobObjectW == nil {
+			jobObjectInitErr = fmt.Errorf("failed to load CreateJobObjectW")
+			return
+		}
+
+		setInformationJobObject = kernel32DLL.NewProc("SetInformationJobObject")
+		if setInformationJobObject == nil {
+			jobObjectInitErr = fmt.Errorf("failed to load SetInformationJobObject")
+			return
+		}
+
+		assignProcessToJobObject = kernel32DLL.NewProc("AssignProcessToJobObject")
+		if assignProcessToJobObject == nil {
+			jobObjectInitErr = fmt.Errorf("failed to load AssignProcessToJobObject")
+			return
+		}
+	})
+	return jobObjectInitErr
+}
+
+func SetupCmdSysProcAttr(cmd *exec.Cmd) {
+	// Job Object assignment deferred until after process creation
+}
+
+func CreateJobObject() (syscall.Handle, error) {
+	if err := initJobObjectAPI(); err != nil {
+		return 0, fmt.Errorf("job object API not available: %w", err)
+	}
+
+	handle, _, err := createJobObjectW.Call(0, 0)
+	if handle == 0 {
+		return 0, fmt.Errorf("CreateJobObject failed: %w", err)
+	}
+
+	info := JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
+		BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION{
+			LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+		},
+	}
+
+	ret, _, err := setInformationJobObject.Call(
+		uintptr(handle),
+		uintptr(9),
+		uintptr(unsafe.Pointer(&info)),
+		uintptr(unsafe.Sizeof(info)),
+	)
+	if ret == 0 {
+		_ = syscall.CloseHandle(syscall.Handle(handle))
+		return 0, fmt.Errorf("SetInformationJobObject failed: %w", err)
+	}
+
+	return syscall.Handle(handle), nil
+}
+
+func AssignProcessToJob(jobHandle syscall.Handle, process *os.Process) error {
+	if err := initJobObjectAPI(); err != nil {
+		return fmt.Errorf("job object API not available: %w", err)
+	}
+
+	ret, _, err := assignProcessToJobObject.Call(
+		uintptr(jobHandle),
+		uintptr(process.Pid),
+	)
+	if ret == 0 {
+		return fmt.Errorf("AssignProcessToJobObject failed: %w", err)
+	}
+	return nil
+}
+
 func KillProcessGroup(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
 
-	// Use absolute path to taskkill to prevent PATH hijacking
 	taskkillPathOnce.Do(func() {
 		var err error
 		taskkillPath, err = exec.LookPath("taskkill")
 		if err != nil {
-			// Fallback to system32 path if LookPath fails
 			taskkillPath = os.Getenv("SystemRoot") + "\\system32\\taskkill.exe"
 		}
 	})
 
-	// Use taskkill to terminate the entire process tree
-	// /F = force, /T = terminate all child processes, /PID = process ID
 	killCmd := exec.Command(taskkillPath, "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
-	// Ignore errors - process may already be dead
 	_ = killCmd.Run()
-
-	// Fallback: try direct Kill() in case taskkill failed
 	_ = cmd.Process.Kill()
 }
 
-// IsProcessAlive checks if the process is still running (Windows).
 func IsProcessAlive(process *os.Process) bool {
 	if process == nil {
 		return false
 	}
-	// On Windows, if we have the process handle and haven't Wait()ed,
-	// we assume it is alive. The goroutine in SessionManager handles dead state.
 	return true
 }

@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"encoding/json"
 	"errors"
 	"io"
@@ -152,14 +153,14 @@ func (s *Session) WriteInput(msg map[string]any) error {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("json marshal: %w", err)
 	}
 
 	data = append(data, '\n')
 
 	_, err = s.stdin.Write(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("stdin write: %w", err)
 	}
 
 	s.LastActive = time.Now()
