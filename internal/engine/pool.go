@@ -8,16 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hrygo/hotplex/internal/sys"
 	"github.com/hrygo/hotplex/provider"
 )
-
-
 
 // SessionPool implements the SessionManager as a thread-safe singleton.
 // It orchestrates the lifecycle of multiple CLI processes, ensuring that
@@ -56,7 +54,7 @@ var blockedEnvPrefixes = []string{
 func buildSafeEnv() []string {
 	env := os.Environ()
 	safeEnv := make([]string, 0, len(env)+1)
-	
+
 	for _, e := range env {
 		// Check if this env var should be blocked
 		blocked := false
@@ -70,13 +68,12 @@ func buildSafeEnv() []string {
 			safeEnv = append(safeEnv, e)
 		}
 	}
-	
+
 	// Add required CLI environment variables
 	safeEnv = append(safeEnv, "CLAUDE_DISABLE_TELEMETRY=1")
-	
+
 	return safeEnv
 }
-
 
 // NewSessionPool creates a new session manager.
 func NewSessionPool(logger *slog.Logger, timeout time.Duration, opts EngineOptions, cliPath string, prv provider.Provider) *SessionPool {

@@ -3,9 +3,9 @@ package engine
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os/exec"
@@ -73,7 +73,6 @@ func (s *Session) GetLastActive() time.Time {
 	defer s.mu.RUnlock()
 	return s.LastActive
 }
-
 
 // SetStatus updates the session status with proper locking.
 func (s *Session) SetStatus(status SessionStatus) {
