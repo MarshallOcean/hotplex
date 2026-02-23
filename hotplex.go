@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	Version      = "0.9.0"
+	Version      = "0.9.3"
 	VersionMajor = 0
 	VersionMinor = 9
-	VersionPatch = 0
+	VersionPatch = 3
 )
 
 // ===== Engine Types =====
