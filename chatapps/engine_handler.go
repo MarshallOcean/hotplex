@@ -93,10 +93,11 @@ type StreamCallback struct {
 	logger    *slog.Logger
 	mu        sync.Mutex
 	isFirst   bool
+	metadata  map[string]any // Original message metadata (channel_id, thread_ts, etc.)
 }
 
 // NewStreamCallback creates a new StreamCallback
-func NewStreamCallback(ctx context.Context, sessionID, platform string, adapters *AdapterManager, logger *slog.Logger) *StreamCallback {
+func NewStreamCallback(ctx context.Context, sessionID, platform string, adapters *AdapterManager, logger *slog.Logger, metadata map[string]any) *StreamCallback {
 	return &StreamCallback{
 		ctx:       ctx,
 		sessionID: sessionID,
@@ -104,6 +105,7 @@ func NewStreamCallback(ctx context.Context, sessionID, platform string, adapters
 		adapters:  adapters,
 		logger:    logger,
 		isFirst:   true,
+		metadata:  metadata,
 	}
 }
 
@@ -231,14 +233,30 @@ func (c *StreamCallback) sendMessage(content string, eventType string) error {
 		return nil
 	}
 
+	// Build metadata with original message's platform-specific data (channel_id, thread_ts, etc.)
+	metadata := map[string]any{
+		"stream":     true,
+		"event_type": eventType,
+	}
+
+	// Copy important metadata from original message
+	if c.metadata != nil {
+		if channelID, ok := c.metadata["channel_id"]; ok {
+			metadata["channel_id"] = channelID
+		}
+		if channelType, ok := c.metadata["channel_type"]; ok {
+			metadata["channel_type"] = channelType
+		}
+		if threadTS, ok := c.metadata["thread_ts"]; ok {
+			metadata["thread_ts"] = threadTS
+		}
+	}
+
 	msg := &ChatMessage{
 		Platform:  c.platform,
 		SessionID: c.sessionID,
 		Content:   content,
-		Metadata: map[string]any{
-			"stream":     true,
-			"event_type": eventType,
-		},
+		Metadata:  metadata,
 	}
 
 	return c.adapters.SendMessage(c.ctx, c.platform, c.sessionID, msg)
@@ -300,13 +318,19 @@ func WithConfigLoader(loader *ConfigLoader) EngineMessageHandlerOption {
 // Handle implements MessageHandler
 func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) error {
 	// Determine work directory
-	workDir := h.workDirFn(msg.SessionID)
+	workDir := ""
+	if h.workDirFn != nil {
+		workDir = h.workDirFn(msg.SessionID)
+	}
 	if workDir == "" {
 		workDir = "/tmp/hotplex-chatapps"
 	}
 
 	// Determine task instructions
-	taskInstr := h.taskInstrFn(msg.SessionID)
+	taskInstr := ""
+	if h.taskInstrFn != nil {
+		taskInstr = h.taskInstrFn(msg.SessionID)
+	}
 	if taskInstr == "" && h.configLoader != nil {
 		taskInstr = h.configLoader.GetTaskInstructions(msg.Platform)
 	}
@@ -336,8 +360,8 @@ func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) err
 		TaskInstructions: fullInstructions,
 	}
 
-	// Create stream callback
-	callback := NewStreamCallback(ctx, msg.SessionID, msg.Platform, h.adapters, h.logger)
+	// Create stream callback with original message metadata
+	callback := NewStreamCallback(ctx, msg.SessionID, msg.Platform, h.adapters, h.logger, msg.Metadata)
 	wrappedCallback := func(eventType string, data any) error {
 		return callback.Handle(eventType, data)
 	}

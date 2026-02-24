@@ -201,7 +201,16 @@ func (a *Adapter) handleEventCallback(ctx context.Context, eventData json.RawMes
 		return
 	}
 
-	if msgEvent.BotID != "" || (msgEvent.SubType != "" && msgEvent.SubType != "message_changed") {
+	// Skip bot messages
+	if msgEvent.BotID != "" {
+		a.Logger().Debug("Skipping bot message", "bot_id", msgEvent.BotID)
+		return
+	}
+
+	// Skip certain subtypes that don't need processing
+	switch msgEvent.SubType {
+	case "message_changed", "message_deleted", "thread_broadcast":
+		a.Logger().Debug("Skipping message subtype", "subtype", msgEvent.SubType)
 		return
 	}
 
@@ -227,6 +236,11 @@ func (a *Adapter) handleEventCallback(ctx context.Context, eventData json.RawMes
 	// Add thread info if present
 	if msgEvent.ThreadTS != "" {
 		msg.Metadata["thread_ts"] = msgEvent.ThreadTS
+	}
+
+	// Add subtype info for downstream processing
+	if msgEvent.SubType != "" {
+		msg.Metadata["subtype"] = msgEvent.SubType
 	}
 
 	a.webhook.Run(ctx, a.Handler(), msg)
@@ -267,8 +281,17 @@ func (a *Adapter) handleSocketModeEvent(eventType string, data json.RawMessage) 
 		return
 	}
 
-	// Skip bot messages and certain subtypes
-	if msgEvent.BotID != "" || (msgEvent.SubType != "" && msgEvent.SubType != "message_changed") {
+	// Skip bot messages (unless it's a message we should process)
+	if msgEvent.BotID != "" {
+		a.Logger().Debug("Skipping bot message", "bot_id", msgEvent.BotID)
+		return
+	}
+
+	// Skip certain subtypes that don't need processing
+	// Reference: OpenClaw allows file_share and bot_message, skips message_changed/deleted/thread_broadcast
+	switch msgEvent.SubType {
+	case "message_changed", "message_deleted", "thread_broadcast":
+		a.Logger().Debug("Skipping message subtype", "subtype", msgEvent.SubType)
 		return
 	}
 
@@ -296,12 +319,17 @@ func (a *Adapter) handleSocketModeEvent(eventType string, data json.RawMessage) 
 		msg.Metadata["thread_ts"] = msgEvent.ThreadTS
 	}
 
+	// Add subtype info for downstream processing
+	if msgEvent.SubType != "" {
+		msg.Metadata["subtype"] = msgEvent.SubType
+	}
+
 	handler := a.Handler()
 	if handler == nil {
 		a.Logger().Error("Handler is nil, message will not be processed")
 		return
 	}
-	a.Logger().Debug("Forwarding message to handler", "sessionID", sessionID, "content", msg.Content)
+	a.Logger().Info("Forwarding message to handler", "sessionID", sessionID, "content", msg.Content, "subtype", msgEvent.SubType)
 	a.webhook.Run(context.Background(), handler, msg)
 }
 
@@ -387,18 +415,36 @@ func (a *Adapter) sendToChannelOnce(ctx context.Context, channelID, text, thread
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
 	// Check for rate limit (429)
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return fmt.Errorf("rate limited: 429")
 	}
 
 	if resp.StatusCode >= 400 {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("send failed with status %d (failed to read body: %v)", resp.StatusCode, err)
-		}
 		return fmt.Errorf("send failed: %d %s", resp.StatusCode, string(respBody))
 	}
 
+	// Parse Slack API response to check "ok" field
+	// Slack API may return HTTP 200 with {"ok": false, "error": "..."}
+	var slackResp struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(respBody, &slackResp); err != nil {
+		a.Logger().Warn("Failed to parse Slack response", "body", string(respBody))
+		// Don't fail - message might have been sent
+		return nil
+	}
+
+	if !slackResp.OK {
+		return fmt.Errorf("slack API error: %s", slackResp.Error)
+	}
+
+	a.Logger().Debug("Message sent successfully", "channel", channelID)
 	return nil
 }
