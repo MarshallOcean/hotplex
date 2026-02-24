@@ -68,7 +68,11 @@ Linter errors (like `unused`) are signals of **incomplete integration**, not jun
 
 1. **No Lazy Deletions**: Never delete newly implemented logic or existing helpful code just to silence a linter error (e.g., `unused`). 
 2. **Fix the Root Cause**: If a function is `unused`, it's an indicator that you forgot to link it to the main execution flow. Integrate it properly instead of removing it.
-3. **Draft Preservation**: If code is truly meant as a draft/extension for the future and cannot be linked yet, use `//nolint:unused` with a clear explanation rather than deleting it.
+3. **Draft Preservation**: If code is for the future, use `//nolint:unused` with an explanation.
+
+### 2.4 State & Lifecycle Ownership
+1. **The Pool is Truth**: `internal/engine/pool.go` is the **exclusive owner** of process states. Do not maintain redundant maps of sessions in other layers.
+2. **Stateless Runners**: `engine/runner.go` should remain a stateless dispatcher/orchestrator where possible.
 
 ---
 
@@ -101,18 +105,18 @@ When looking for where to make changes, follow this map:
   - `engine_handler.go`: Standardizes AI events into technical keys for cross-platform consumption.
   - `manager.go`: Controls the lifecycle (start/stop) of all bot adapters.
   - `setup.go`: Unified entry point to boot multi-platform bots based on YAML configs.
-  - **Adapters**: `telegram/`, `discord/`, `slack/`, etc.
+  - **Adapters (Social)**: `telegram/`, `discord/`, `slack/`, etc.
   - **Configs**: `configs/*.yaml`
 - **Internal Core (`internal/engine/`)**:
-  - `pool.go`: `SessionPool` manages process hot-multiplexing, GC, and concurrency safety.
+  - `pool.go`: **State Owner**. Manages process hot-multiplexing, GC, and concurrency safety.
   - `session.go`: OS process piping, PGID management, and low-level I/O state machines.
 - **Internal Security (`internal/security/`)**:
   - `detector.go`: The Regex WAF (System-wide input/output command interception).
 - **Internal Systems (`internal/sys/`)**:
   - `proc_unix.go` / `proc_windows.go`: OS-level Process Group (PGID) isolation and signal routing.
-- **Adapters (`internal/server/`)**:
+- **Protocol Gateways (`internal/server/`)**:
   - `hotplex_ws.go`: Native JSON-over-WebSocket protocol.
-  - `opencode_http.go`: OpenCode HTTP/SSE translation layer.
+  - `opencode_http.go`: OpenCode HTTP/SSE compatibility layer.
   - `security.go`: Shared security config for CORS and API Key authentication.
 - **Types & Events (`types/`, `event/`)**:
   - Core data models and generic event emission bus.
