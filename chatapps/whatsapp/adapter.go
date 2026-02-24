@@ -1,12 +1,14 @@
 package whatsapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/hrygo/hotplex/chatapps/base"
@@ -17,9 +19,11 @@ type Adapter struct {
 	config      Config
 	webhookPath string
 	sender      func(ctx context.Context, sessionID string, msg *base.ChatMessage) error
+	senderMu    sync.RWMutex   // Protects sender
+	webhookWg   sync.WaitGroup // Tracks webhook processing goroutines
 }
 
-func NewAdapter(config Config, logger *slog.Logger) *Adapter {
+func NewAdapter(config Config, logger *slog.Logger, opts ...base.AdapterOption) *Adapter {
 	a := &Adapter{
 		config:      config,
 		webhookPath: "/webhook",
@@ -36,15 +40,114 @@ func NewAdapter(config Config, logger *slog.Logger) *Adapter {
 		base.WithHTTPHandler(a.webhookPath, a.handleWebhook),
 	)
 
+	for _, opt := range opts {
+		opt(a.Adapter)
+	}
+
+	// Set default sender if credentials are configured
+	if config.AccessToken != "" && config.PhoneNumberID != "" {
+		a.sender = a.defaultSender
+	}
+
 	return a
 }
 
 func (a *Adapter) SendMessage(ctx context.Context, sessionID string, msg *base.ChatMessage) error {
-	return a.sender(ctx, sessionID, msg)
+	a.senderMu.RLock()
+	sender := a.sender
+	a.senderMu.RUnlock()
+	if sender == nil {
+		return fmt.Errorf("sender not configured")
+	}
+	return sender(ctx, sessionID, msg)
 }
 
 func (a *Adapter) SetSender(fn func(ctx context.Context, sessionID string, msg *base.ChatMessage) error) {
+	a.senderMu.Lock()
+	defer a.senderMu.Unlock()
 	a.sender = fn
+}
+
+// defaultSender sends message via WhatsApp Cloud API
+func (a *Adapter) defaultSender(ctx context.Context, sessionID string, msg *base.ChatMessage) error {
+	if a.config.AccessToken == "" || a.config.PhoneNumberID == "" {
+		return fmt.Errorf("whatsapp credentials not configured")
+	}
+
+	// Extract recipient phone number from session metadata
+	recipient := a.extractRecipient(sessionID, msg)
+	if recipient == "" {
+		return fmt.Errorf("recipient phone number not found in session")
+	}
+
+	// Use configured PhoneNumberID or extract from metadata
+	phoneNumberID := a.config.PhoneNumberID
+	if pnid, ok := msg.Metadata["phone_number_id"].(string); ok && pnid != "" {
+		phoneNumberID = pnid
+	}
+
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"to":                recipient,
+		"type":              "text",
+		"text": map[string]any{
+			"body": msg.Content,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", a.config.APIVersion, phoneNumberID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+a.config.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("whatsapp API error: %d %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// extractRecipient extracts recipient phone number from session or message metadata
+func (a *Adapter) extractRecipient(sessionID string, msg *base.ChatMessage) string {
+	if msg.Metadata == nil {
+		return ""
+	}
+	if recipient, ok := msg.Metadata["recipient"].(string); ok && recipient != "" {
+		return recipient
+	}
+	// Fallback: use UserID as recipient (phone number)
+	return msg.UserID
+}
+
+// Stop waits for pending webhook goroutines to complete
+func (a *Adapter) Stop() error {
+	done := make(chan struct{})
+	go func() {
+		a.webhookWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		a.Logger().Warn("Timeout waiting for webhook goroutines")
+	}
+
+	return a.Adapter.Stop()
 }
 
 type IncomingMessage struct {

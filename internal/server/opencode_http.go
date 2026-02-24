@@ -84,10 +84,21 @@ func (s *OpenCodeHTTPHandler) handleGlobalEvent(w http.ResponseWriter, r *http.R
 	// Send initial connected event
 	s.broadcastRaw(id, "server.connected", map[string]any{})
 
+	// Use a ticker to periodically check if client is still connected
+	// This prevents indefinite blocking on full channel
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case msg := <-ch:
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-ticker.C:
+			// Send keepalive to detect stale connections
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()

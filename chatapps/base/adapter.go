@@ -43,8 +43,10 @@ type Adapter struct {
 	mu             sync.RWMutex
 	handler        MessageHandler
 	running        bool
+	runningMu      sync.Mutex // Protects running state
 	sessionTimeout time.Duration
 	cleanupDone    chan struct{}
+	cleanupOnce    sync.Once // Prevents double-close of cleanupDone
 
 	// Platform-specific implementations
 	platformName    string
@@ -52,6 +54,9 @@ type Adapter struct {
 	messageParser   MessageParser
 	messageSender   MessageSender
 	httpHandlers    map[string]http.HandlerFunc
+
+	// Server control
+	disableServer bool
 }
 
 // NewAdapter creates a new base adapter
@@ -120,6 +125,14 @@ func WithHTTPHandler(path string, handler http.HandlerFunc) AdapterOption {
 	}
 }
 
+// WithoutServer disables the embedded HTTP server
+// Use this when running adapters under a unified server
+func WithoutServer() AdapterOption {
+	return func(a *Adapter) {
+		a.disableServer = true
+	}
+}
+
 // Platform returns the platform name
 func (a *Adapter) Platform() string {
 	return a.platformName
@@ -130,13 +143,17 @@ func (a *Adapter) SystemPrompt() string {
 	return a.config.SystemPrompt
 }
 
-// SetHandler sets the message handler
+// SetHandler sets the message handler (thread-safe)
 func (a *Adapter) SetHandler(handler MessageHandler) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.handler = handler
 }
 
-// Handler returns the message handler
+// Handler returns the message handler (thread-safe)
 func (a *Adapter) Handler() MessageHandler {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.handler
 }
 
@@ -150,9 +167,37 @@ func (a *Adapter) SetLogger(logger *slog.Logger) {
 	a.logger = logger
 }
 
+// WebhookPath returns the primary webhook path for this adapter
+func (a *Adapter) WebhookPath() string {
+	for path := range a.httpHandlers {
+		return path
+	}
+	return ""
+}
+
+// WebhookHandler returns an http.Handler with all webhook endpoints registered
+func (a *Adapter) WebhookHandler() http.Handler {
+	mux := http.NewServeMux()
+	for path, handler := range a.httpHandlers {
+		mux.HandleFunc(path, handler)
+	}
+	return mux
+}
+
 // Start starts the adapter
 func (a *Adapter) Start(ctx context.Context) error {
+	a.runningMu.Lock()
+	defer a.runningMu.Unlock()
+
 	if a.running {
+		return nil
+	}
+
+	// Serverless mode: skip HTTP server, just start session cleanup
+	if a.disableServer {
+		go a.cleanupSessions()
+		a.running = true
+		a.logger.Info("Adapter started (serverless mode)", "platform", a.platformName)
 		return nil
 	}
 
@@ -184,18 +229,32 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 // Stop stops the adapter
 func (a *Adapter) Stop() error {
+	a.runningMu.Lock()
+	defer a.runningMu.Unlock()
+
 	if !a.running {
 		return nil
 	}
 
-	// Signal cleanup goroutine to stop
-	close(a.cleanupDone)
+	// Signal cleanup goroutine to stop (use Once to prevent double-close)
+	a.cleanupOnce.Do(func() {
+		close(a.cleanupDone)
+	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Skip server shutdown in serverless mode
+	if a.disableServer {
+		a.running = false
+		a.logger.Info("Adapter stopped (serverless mode)", "platform", a.platformName)
+		return nil
+	}
 
-	if err := a.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown server: %w", err)
+	if a.server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := a.server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("shutdown server: %w", err)
+		}
 	}
 
 	a.running = false

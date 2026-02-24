@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"net/http"
 	"time"
 )
 
@@ -47,6 +48,13 @@ type ChatAdapter interface {
 	Stop() error
 	SendMessage(ctx context.Context, sessionID string, msg *ChatMessage) error
 	HandleMessage(ctx context.Context, msg *ChatMessage) error
+	SetHandler(MessageHandler)
 }
 
 type MessageHandler func(ctx context.Context, msg *ChatMessage) error
+
+// WebhookProvider exposes HTTP handlers for unified server integration
+type WebhookProvider interface {
+	WebhookPath() string
+	WebhookHandler() http.Handler
+}

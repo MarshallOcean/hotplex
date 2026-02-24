@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,7 +43,12 @@ func (c *ExecutionController) Execute(ctx context.Context, req ExecutionRequest,
 	if workDir == "" {
 		workDir = "/tmp/hotplex_sandbox"
 	}
+
+	// Clean and validate workDir to prevent path traversal
 	workDir = filepath.Clean(workDir)
+	if !isPathSafe(workDir) {
+		return fmt.Errorf("work_dir path is not allowed: %s", workDir)
+	}
 
 	timeout := req.Timeout
 	if timeout == 0 {
@@ -76,4 +83,24 @@ func (c *ExecutionController) Execute(ctx context.Context, req ExecutionRequest,
 
 	c.logger.Info("Controller: execution completed successfully", "session_id", sessionID)
 	return nil
+}
+
+// isPathSafe validates that the path doesn't attempt directory traversal
+// and is within allowed directories
+func isPathSafe(path string) bool {
+	// Reject absolute paths outside /tmp or home directories
+	if filepath.IsAbs(path) {
+		allowedPrefixes := []string{
+			"/tmp/",
+			"/var/folders/",
+		}
+		for _, prefix := range allowedPrefixes {
+			if strings.HasPrefix(path, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	// For relative paths, clean should have resolved .. already
+	return !strings.Contains(path, "..")
 }

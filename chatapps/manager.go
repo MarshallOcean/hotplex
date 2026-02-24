@@ -4,11 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
+
+	"github.com/gorilla/mux"
+
+	"github.com/hrygo/hotplex/chatapps/base"
+	"github.com/hrygo/hotplex/engine"
 )
 
 type AdapterManager struct {
 	adapters map[string]ChatAdapter
+	engines  []*engine.Engine
 	mu       sync.RWMutex
 	logger   *slog.Logger
 }
@@ -73,23 +80,60 @@ func (m *AdapterManager) StartAll(ctx context.Context) error {
 }
 
 func (m *AdapterManager) StopAll() error {
-	// Copy adapters to local slice to avoid holding lock during blocking I/O
 	m.mu.Lock()
 	adapters := make([]ChatAdapter, 0, len(m.adapters))
 	for _, adapter := range m.adapters {
 		adapters = append(adapters, adapter)
 	}
+	engines := m.engines
+	m.engines = nil
 	m.mu.Unlock()
 
-	// Stop adapters without holding lock
+	var firstErr error
+
+	// 1. Stop adapters (webhooks, etc.)
 	for _, adapter := range adapters {
 		if err := adapter.Stop(); err != nil {
 			m.logger.Error("Stop adapter failed", "platform", adapter.Platform(), "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			m.logger.Info("Adapter stopped", "platform", adapter.Platform())
+		}
+	}
+
+	// 2. Close all platform engines in parallel (kills CLI child processes)
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+
+	for _, eng := range engines {
+		if eng == nil {
 			continue
 		}
-		m.logger.Info("Adapter stopped", "platform", adapter.Platform())
+		wg.Add(1)
+		go func(e *engine.Engine) {
+			defer wg.Done()
+			if err := e.Close(); err != nil {
+				m.logger.Error("Close engine failed", "error", err)
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+			}
+		}(eng)
 	}
-	return nil
+
+	wg.Wait()
+	m.logger.Info("Cleanup completed", "engines_count", len(engines))
+	return firstErr
+}
+
+func (m *AdapterManager) RegisterEngine(eng *engine.Engine) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.engines = append(m.engines, eng)
 }
 
 func (m *AdapterManager) ListPlatforms() []string {
@@ -110,4 +154,35 @@ func (m *AdapterManager) SendMessage(ctx context.Context, platform, sessionID st
 		return fmt.Errorf("adapter not found for platform: %s", platform)
 	}
 	return adapter.SendMessage(ctx, sessionID, msg)
+}
+
+// RegisterRoutes registers all adapter webhooks to a unified router
+// Path format: /webhook/{platform} (e.g., /webhook/telegram, /webhook/discord)
+func (m *AdapterManager) RegisterRoutes(router *mux.Router) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for platform, adapter := range m.adapters {
+		// Check if adapter implements WebhookProvider
+		if provider, ok := adapter.(base.WebhookProvider); ok {
+			handler := provider.WebhookHandler()
+			path := provider.WebhookPath()
+
+			// Register under /webhook/{platform} prefix
+			fullPath := fmt.Sprintf("/webhook/%s%s", platform, path)
+			router.Handle(fullPath, handler)
+
+			m.logger.Info("Registered webhook", "platform", platform, "path", fullPath)
+		} else {
+			m.logger.Warn("Adapter does not support webhooks", "platform", platform)
+		}
+	}
+}
+
+// Handler returns an http.Handler with all adapter webhooks mounted
+// This is a convenience method when you don't need gorilla/mux
+func (m *AdapterManager) Handler() http.Handler {
+	mux := mux.NewRouter()
+	m.RegisterRoutes(mux)
+	return mux
 }

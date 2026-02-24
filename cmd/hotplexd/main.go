@@ -12,23 +12,71 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/hrygo/hotplex"
+	"github.com/hrygo/hotplex/chatapps"
 	"github.com/hrygo/hotplex/internal/server"
+	"github.com/hrygo/hotplex/provider"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Configure logging
+	// 0. Load .env file
+	if err := godotenv.Load(); err != nil {
+		// It's okay if .env doesn't exist, we'll use environmental variables or defaults
+		_ = err
+	}
+
+	// 1. Configure logging
+	logLevel := slog.LevelInfo
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		switch strings.ToUpper(val) {
+		case "DEBUG":
+			logLevel = slog.LevelDebug
+		case "WARN":
+			logLevel = slog.LevelWarn
+		case "ERROR":
+			logLevel = slog.LevelError
+		}
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: logLevel,
 	}))
 
-	logger.Info("Starting HotPlex Proxy Server...")
+	logger.Info("Starting HotPlex Proxy Server...", "log_level", logLevel)
 
-	// 1. Initialize HotPlex Core Engine
+	// 2. Initialize HotPlex Core Engine
 	idleTimeout := 30 * time.Minute
 	if val := os.Getenv("IDLE_TIMEOUT"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			idleTimeout = d
 		}
+	}
+
+	executionTimeout := 30 * time.Minute
+	if val := os.Getenv("EXECUTION_TIMEOUT"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			executionTimeout = d
+		}
+	}
+
+	// 2.1 Decide Provider
+	providerType := provider.ProviderType(os.Getenv("HOTPLEX_PROVIDER_TYPE"))
+	if providerType == "" {
+		providerType = provider.ProviderTypeClaudeCode
+	}
+
+	providerBinary := os.Getenv("HOTPLEX_PROVIDER_BINARY")
+	providerModel := os.Getenv("HOTPLEX_PROVIDER_MODEL")
+
+	prv, err := provider.CreateProvider(provider.ProviderConfig{
+		Type:         providerType,
+		Enabled:      true,
+		BinaryPath:   providerBinary,
+		DefaultModel: providerModel,
+	})
+	if err != nil {
+		logger.Error("Failed to create provider", "type", providerType, "error", err)
+		os.Exit(1)
 	}
 
 	// Load API key for admin operations
@@ -47,10 +95,11 @@ func main() {
 	}
 
 	opts := hotplex.EngineOptions{
-		Timeout:     30 * time.Minute,
+		Timeout:     executionTimeout,
 		IdleTimeout: idleTimeout,
 		Logger:      logger,
 		AdminToken:  adminToken,
+		Provider:    prv,
 	}
 
 	engine, err := hotplex.NewEngine(opts)
@@ -65,17 +114,16 @@ func main() {
 	http.Handle("/ws/v1/agent", wsHandler)
 
 	// 2.1 Initialize OpenCode compatibility server
-	openCodeSrv := server.NewOpenCodeHTTPHandler(engine, logger, corsConfig)
-	ocRouter := mux.NewRouter()
-	openCodeSrv.RegisterRoutes(ocRouter)
-	// We mount the mux router to the default ServeMux
-	// Note: We need to handle /global, /session, /config etc.
-	// We can use a prefix or just individual registrations.
-	// OpenCode SDK expects these at the root by default if baseURL is set to the host.
-	http.Handle("/global/", ocRouter)
-	http.Handle("/session", ocRouter)
-	http.Handle("/session/", ocRouter)
-	http.Handle("/config", ocRouter)
+	if os.Getenv("HOTPLEX_OPENCODE_COMPAT_ENABLED") != "false" {
+		openCodeSrv := server.NewOpenCodeHTTPHandler(engine, logger, corsConfig)
+		ocRouter := mux.NewRouter()
+		openCodeSrv.RegisterRoutes(ocRouter)
+		http.Handle("/global/", ocRouter)
+		http.Handle("/session", ocRouter)
+		http.Handle("/session/", ocRouter)
+		http.Handle("/config", ocRouter)
+		logger.Info("OpenCode compatibility server initialized")
+	}
 
 	// 2.2 Initialize Observability handlers
 	healthHandler := server.NewHealthHandler()
@@ -88,12 +136,42 @@ func main() {
 	http.Handle("/health/live", liveHandler)
 	http.Handle("/metrics", metricsHandler)
 
+	// 3. Initialize ChatApps adapters
+	chatappsEnabled := os.Getenv("CHATAPPS_ENABLED")
+	var chatappsMgr *chatapps.AdapterManager
+	if chatappsEnabled == "true" {
+		var chatappsHandler http.Handler
+		var err error
+		chatappsHandler, chatappsMgr, err = chatapps.Setup(context.Background(), logger)
+		if err != nil {
+			logger.Error("Failed to setup chatapps", "error", err)
+		} else {
+			http.Handle("/webhook/", chatappsHandler)
+			logger.Info("ChatApps adapters initialized and webhooks registered")
+		}
+	}
+
+	// Cleanup safety net (deferred immediately after engines/mgrs are ready)
+	defer func() {
+		logger.Info("Executing final cleanup safety net...")
+		if chatappsMgr != nil {
+			if err := chatappsMgr.StopAll(); err != nil {
+				logger.Error("ChatApps cleanup failed", "error", err)
+			}
+		}
+		if engine != nil {
+			if err := engine.Close(); err != nil {
+				logger.Error("Core engine cleanup failed", "error", err)
+			}
+		}
+	}()
+
+	// 4. Start HTTP server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// 3. Listen for OS signals to ensure graceful shutdown of engine and child processes
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
@@ -106,25 +184,17 @@ func main() {
 		logger.Info("Listening on", "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Server failed", "error", err)
-			os.Exit(1)
+			stop <- syscall.SIGTERM
 		}
 	}()
 
 	<-stop
 	logger.Info("Shutting down gracefully...")
 
-	// Create a timeout context for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown failed", "error", err)
 	}
-
-	// engine.Close() will sweep all active process groups
-	if err := engine.Close(); err != nil {
-		logger.Error("Engine shutdown failed", "error", err)
-	}
-
-	logger.Info("HotPlex Proxy Server stopped")
 }

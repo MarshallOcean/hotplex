@@ -1,20 +1,31 @@
 package chatapps
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/hrygo/hotplex/provider"
 	"gopkg.in/yaml.v3"
 )
 
 type PlatformConfig struct {
-	Platform         string         `yaml:"platform"`
-	SystemPrompt     string         `yaml:"system_prompt"`
-	TaskInstructions string         `yaml:"task_instructions"`
-	Options          map[string]any `yaml:"options,omitempty"`
+	Platform         string                  `yaml:"platform"`
+	SystemPrompt     string                  `yaml:"system_prompt"`
+	TaskInstructions string                  `yaml:"task_instructions"`
+	Engine           EngineConfig            `yaml:"engine"`
+	Provider         provider.ProviderConfig `yaml:"provider"`
+	Options          map[string]any          `yaml:"options,omitempty"`
+}
+
+type EngineConfig struct {
+	Timeout     time.Duration `yaml:"timeout"`
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	WorkDir     string        `yaml:"work_dir"`
 }
 
 type Logger = slog.Logger
@@ -80,11 +91,7 @@ func (c *ConfigLoader) GetConfig(platform string) *PlatformConfig {
 	defer c.mu.RUnlock()
 
 	if cfg, ok := c.configs[platform]; ok {
-		return &PlatformConfig{
-			Platform:         cfg.Platform,
-			SystemPrompt:     cfg.SystemPrompt,
-			TaskInstructions: cfg.TaskInstructions,
-		}
+		return cfg // Return direct pointer for full access
 	}
 	return nil
 }
@@ -133,7 +140,24 @@ func (c *ConfigLoader) GetOptions(platform string) map[string]any {
 	defer c.mu.RUnlock()
 
 	if cfg, ok := c.configs[platform]; ok {
-		return cfg.Options
+		return deepCopyMap(cfg.Options)
 	}
 	return nil
+}
+
+// deepCopyMap creates a deep copy of a map to prevent accidental mutation
+func deepCopyMap(original map[string]any) map[string]any {
+	if original == nil {
+		return nil
+	}
+	// Use JSON marshal/unmarshal for deep copy
+	data, err := json.Marshal(original)
+	if err != nil {
+		return nil
+	}
+	var copy map[string]any
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return nil
+	}
+	return copy
 }

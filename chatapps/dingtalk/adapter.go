@@ -1,6 +1,7 @@
 package dingtalk
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -22,12 +23,14 @@ type Adapter struct {
 	config      Config
 	webhookPath string
 	sender      func(ctx context.Context, sessionID string, msg *base.ChatMessage) error
+	senderMu    sync.RWMutex   // Protects sender
+	webhookWg   sync.WaitGroup // Tracks webhook processing goroutines
 	token       string
 	tokenExpire time.Time
 	tokenMu     sync.Mutex
 }
 
-func NewAdapter(config Config, logger *slog.Logger) *Adapter {
+func NewAdapter(config Config, logger *slog.Logger, opts ...base.AdapterOption) *Adapter {
 	a := &Adapter{
 		config:      config,
 		webhookPath: "/webhook",
@@ -40,14 +43,31 @@ func NewAdapter(config Config, logger *slog.Logger) *Adapter {
 		base.WithHTTPHandler(a.webhookPath, a.handleCallback),
 	)
 
+	for _, opt := range opts {
+		opt(a.Adapter)
+	}
+
+	// Set default sender if AppID and AppSecret are configured
+	if config.AppID != "" && config.AppSecret != "" {
+		a.sender = a.defaultSender
+	}
+
 	return a
 }
 
 func (a *Adapter) SendMessage(ctx context.Context, sessionID string, msg *base.ChatMessage) error {
-	return a.sender(ctx, sessionID, msg)
+	a.senderMu.RLock()
+	sender := a.sender
+	a.senderMu.RUnlock()
+	if sender == nil {
+		return fmt.Errorf("sender not configured")
+	}
+	return sender(ctx, sessionID, msg)
 }
 
 func (a *Adapter) SetSender(fn func(ctx context.Context, sessionID string, msg *base.ChatMessage) error) {
+	a.senderMu.Lock()
+	defer a.senderMu.Unlock()
 	a.sender = fn
 }
 
@@ -131,8 +151,11 @@ func (a *Adapter) handleCallbackMessage(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if a.Handler() != nil {
+		reqCtx := r.Context()
+		a.webhookWg.Add(1)
 		go func() {
-			if err := a.Handler()(r.Context(), msg); err != nil {
+			defer a.webhookWg.Done()
+			if err := a.Handler()(reqCtx, msg); err != nil {
 				a.Logger().Error("Handle message failed", "error", err)
 			}
 		}()
@@ -155,6 +178,7 @@ func (a *Adapter) GetAccessToken() (string, error) {
 		return "", nil
 	}
 
+	// Fast path: check if we have a valid token (with lock)
 	a.tokenMu.Lock()
 	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.tokenExpire) {
 		token := a.token
@@ -163,6 +187,7 @@ func (a *Adapter) GetAccessToken() (string, error) {
 	}
 	a.tokenMu.Unlock()
 
+	// Slow path: fetch new token
 	url := fmt.Sprintf("https://api.dingtalk.com/v1.0/oauth2/oAuth2/accessToken?appKey=%s&appSecret=%s",
 		a.config.AppID, a.config.AppSecret)
 	resp, err := http.Get(url)
@@ -186,9 +211,10 @@ func (a *Adapter) GetAccessToken() (string, error) {
 	} else {
 		a.tokenExpire = time.Now().Add(time.Duration(result.ExpireIn) * time.Second)
 	}
+	token := a.token
 	a.tokenMu.Unlock()
 
-	return result.AccessToken, nil
+	return token, nil
 }
 
 func (a *Adapter) ChunkMessage(content string) []string {
@@ -238,4 +264,94 @@ func (a *Adapter) ChunkMessage(content string) []string {
 	}
 
 	return chunks
+}
+
+// Stop stops the adapter and waits for pending webhook goroutines
+func (a *Adapter) Stop() error {
+	// Wait for pending webhook goroutines to complete
+	done := make(chan struct{})
+	go func() {
+		a.webhookWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		a.Logger().Warn("Timeout waiting for webhook goroutines")
+	}
+
+	return a.Adapter.Stop()
+}
+
+// defaultSender sends message via DingTalk Robot API
+func (a *Adapter) defaultSender(ctx context.Context, sessionID string, msg *base.ChatMessage) error {
+	if a.config.AppID == "" || a.config.AppSecret == "" {
+		return fmt.Errorf("dingtalk app credentials not configured")
+	}
+
+	// Extract webhook URL from session metadata or use robot code
+	webhookURL := a.extractWebhookURL(sessionID, msg)
+	if webhookURL == "" {
+		return fmt.Errorf("webhook url not found in session")
+	}
+
+	// Get access token
+	token, err := a.GetAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+	if token == "" {
+		return fmt.Errorf("access token is empty")
+	}
+
+	// Chunk message if needed
+	chunks := a.ChunkMessage(msg.Content)
+
+	for _, chunk := range chunks {
+		payload := map[string]any{
+			"msgtype": "text",
+			"text": map[string]any{
+				"content": chunk,
+			},
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal payload: %w", err)
+		}
+
+		url := fmt.Sprintf("%s?access_token=%s", webhookURL, token)
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("send message: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("dingtalk API error: %d", resp.StatusCode)
+		}
+	}
+
+	return nil
+}
+
+// extractWebhookURL extracts webhook URL from session or message metadata
+func (a *Adapter) extractWebhookURL(sessionID string, msg *base.ChatMessage) string {
+	if msg.Metadata == nil {
+		return ""
+	}
+	if webhookURL, ok := msg.Metadata["webhook_url"].(string); ok && webhookURL != "" {
+		return webhookURL
+	}
+	// Fallback: construct webhook URL from robot code
+	if robotCode, ok := msg.Metadata["robot_code"].(string); ok && robotCode != "" {
+		return "https://api.dingtalk.com/v1.0/robot/message/sendToConversation"
+	}
+	return ""
 }

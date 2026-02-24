@@ -1,4 +1,9 @@
 platform: telegram
+provider:
+  type: claude-code
+  default_model: sonnet
+  default_permission_mode: bypass-permissions
+
 
 system_prompt: |
   ## Identity

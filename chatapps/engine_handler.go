@@ -9,6 +9,7 @@ import (
 
 	"github.com/hrygo/hotplex/engine"
 	"github.com/hrygo/hotplex/event"
+	"github.com/hrygo/hotplex/provider"
 	"github.com/hrygo/hotplex/types"
 )
 
@@ -111,20 +112,22 @@ func (c *StreamCallback) Handle(eventType string, data any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	switch eventType {
-	case "thinking":
+	switch provider.ProviderEventType(eventType) {
+	case provider.EventTypeThinking:
 		return c.handleThinking(data)
-	case "tool_use":
+	case provider.EventTypeToolUse:
 		return c.handleToolUse(data)
-	case "tool_result":
+	case provider.EventTypeToolResult:
 		return c.handleToolResult(data)
-	case "answer":
+	case provider.EventTypeAnswer:
 		return c.handleAnswer(data)
-	case "error":
+	case provider.EventTypeError:
 		return c.handleError(data)
-	case "danger_block":
-		return c.handleDangerBlock(data)
 	default:
+		// Check for specific engine/extended events
+		if eventType == "danger_block" {
+			return c.handleDangerBlock(data)
+		}
 		c.logger.Debug("Ignoring unknown event", "type", eventType)
 	}
 	return nil
@@ -133,46 +136,45 @@ func (c *StreamCallback) Handle(eventType string, data any) error {
 func (c *StreamCallback) handleThinking(data any) error {
 	if c.isFirst {
 		c.isFirst = false
-		return c.sendMessage("🤖 正在思考...")
+		return c.sendMessage(string(provider.EventTypeThinking), string(provider.EventTypeThinking))
 	}
 	return nil
 }
 
 func (c *StreamCallback) handleToolUse(data any) error {
-	// Extract tool info from event data
-	msg := "🔧 使用工具"
+	msg := string(provider.EventTypeToolUse)
 	if m, ok := data.(*event.EventWithMeta); ok {
 		if m.Meta != nil && m.Meta.ToolName != "" {
-			msg = fmt.Sprintf("🔧 使用工具: %s", m.Meta.ToolName)
+			msg = m.Meta.ToolName
 		}
 		if m.EventData != "" {
 			truncated := m.EventData
 			if len(truncated) > 100 {
-				truncated = truncated[:100] + "..."
+				truncated = truncated[0:100] + "..."
 			}
 			msg += fmt.Sprintf("\n```\n%s\n```", truncated)
 		}
 	}
-	return c.sendMessage(msg)
+	return c.sendMessage(msg, string(provider.EventTypeToolUse))
 }
 
 func (c *StreamCallback) handleToolResult(data any) error {
-	msg := "✅ 工具执行完成"
+	msg := string(provider.EventTypeToolResult)
 	if m, ok := data.(*event.EventWithMeta); ok {
 		if m.Meta != nil && m.Meta.Status == "error" {
-			msg = "❌ 工具执行失败"
+			msg = "error"
 			if m.Meta.ErrorMsg != "" {
 				msg += ": " + m.Meta.ErrorMsg
 			}
 		} else if m.EventData != "" {
 			truncated := m.EventData
 			if len(truncated) > 200 {
-				truncated = truncated[:200] + "..."
+				truncated = truncated[0:200] + "..."
 			}
-			msg = fmt.Sprintf("✅ 结果:\n```\n%s\n```", truncated)
+			msg = fmt.Sprintf("```\n%s\n```", truncated)
 		}
 	}
-	return c.sendMessage(msg)
+	return c.sendMessage(msg, string(provider.EventTypeToolResult))
 }
 
 func (c *StreamCallback) handleAnswer(data any) error {
@@ -186,12 +188,11 @@ func (c *StreamCallback) handleAnswer(data any) error {
 		content = fmt.Sprintf("%v", data)
 	}
 
-	// Handle empty content
 	if content == "" {
-		content = "✅ 执行完成"
+		return nil
 	}
 
-	return c.sendMessage("🤖 " + content)
+	return c.sendMessage(content, string(provider.EventTypeAnswer))
 }
 
 func (c *StreamCallback) handleError(data any) error {
@@ -210,7 +211,7 @@ func (c *StreamCallback) handleError(data any) error {
 		errMsg = fmt.Sprintf("%v", data)
 	}
 
-	return c.sendMessage(fmt.Sprintf("❌ 错误: %s", errMsg))
+	return c.sendMessage(errMsg, string(provider.EventTypeError))
 }
 
 func (c *StreamCallback) handleDangerBlock(data any) error {
@@ -219,12 +220,12 @@ func (c *StreamCallback) handleDangerBlock(data any) error {
 	case string:
 		reason = v
 	default:
-		reason = "危险操作被拦截"
+		reason = "security_block"
 	}
-	return c.sendMessage(fmt.Sprintf("🛡️ %s", reason))
+	return c.sendMessage(reason, "security_block")
 }
 
-func (c *StreamCallback) sendMessage(content string) error {
+func (c *StreamCallback) sendMessage(content string, eventType string) error {
 	if c.adapters == nil {
 		c.logger.Debug("No adapters, skipping message send", "platform", c.platform)
 		return nil
@@ -235,12 +236,11 @@ func (c *StreamCallback) sendMessage(content string) error {
 		SessionID: c.sessionID,
 		Content:   content,
 		Metadata: map[string]any{
-			"stream": true,
+			"stream":     true,
+			"event_type": eventType,
 		},
 	}
 
-	// Get chat_id from session metadata if available
-	// In real implementation, we'd store this when receiving message
 	return c.adapters.SendMessage(c.ctx, c.platform, c.sessionID, msg)
 }
 
@@ -359,7 +359,10 @@ func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) err
 			errMsg := &ChatMessage{
 				Platform:  msg.Platform,
 				SessionID: msg.SessionID,
-				Content:   fmt.Sprintf("❌ 执行失败: %v", err),
+				Content:   err.Error(),
+				Metadata: map[string]any{
+					"event_type": string(provider.EventTypeError),
+				},
 			}
 			if err := h.adapters.SendMessage(ctx, msg.Platform, msg.SessionID, errMsg); err != nil {
 				h.logger.Error("Failed to send error message", "session_id", msg.SessionID, "error", err)
