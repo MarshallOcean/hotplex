@@ -60,8 +60,6 @@ func NewAdapter(config Config, logger *slog.Logger, opts ...base.AdapterOption) 
 	handlers[a.interactivePath] = a.handleInteractive
 
 	// Build HTTP handler map
-
-	// Build HTTP handler map
 	for path, handler := range handlers {
 		opts = append(opts, base.WithHTTPHandler(path, handler))
 	}
@@ -261,6 +259,8 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 // handleSocketModeEvent handles incoming events from Socket Mode
 func (a *Adapter) handleSocketModeEvent(eventType string, data json.RawMessage) {
+	a.Logger().Debug("Socket Mode event received", "type", eventType)
+
 	var msgEvent MessageEvent
 	if err := json.Unmarshal(data, &msgEvent); err != nil {
 		a.Logger().Error("Parse socket mode message event failed", "error", err)
@@ -296,7 +296,13 @@ func (a *Adapter) handleSocketModeEvent(eventType string, data json.RawMessage) 
 		msg.Metadata["thread_ts"] = msgEvent.ThreadTS
 	}
 
-	a.webhook.Run(context.Background(), a.Handler(), msg)
+	handler := a.Handler()
+	if handler == nil {
+		a.Logger().Error("Handler is nil, message will not be processed")
+		return
+	}
+	a.Logger().Debug("Forwarding message to handler", "sessionID", sessionID, "content", msg.Content)
+	a.webhook.Run(context.Background(), handler, msg)
 }
 
 func (a *Adapter) handleInteractive(w http.ResponseWriter, r *http.Request) {

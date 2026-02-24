@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -91,20 +92,25 @@ func (s *SocketModeConnection) IsConnected() bool {
 	return s.connected
 }
 
+// connect establishes a WebSocket connection to Slack via apps.connections.open
 func (s *SocketModeConnection) connect() error {
-	s.logger.Info("Connecting to Slack Socket Mode", "url", SocketModeURL, "has_app_token", s.config.AppToken != "", "token_prefix", func() string {
-		if len(s.config.AppToken) > 5 {
-			return s.config.AppToken[:5]
-		}
-		return ""
-	}())
+	s.logger.Info("Opening Slack Socket Mode connection", "has_app_token", s.config.AppToken != "")
 
+	// Step 1: Call apps.connections.open to get WebSocket URL
+	wsURL, err := s.getWebSocketURL()
+	if err != nil {
+		return fmt.Errorf("failed to get WebSocket URL: %w", err)
+	}
+
+	s.logger.Info("Connecting to Slack WebSocket", "url", wsURL)
+
+	// Step 2: Connect to the WebSocket URL
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+s.config.AppToken)
 
-	conn, resp, err := websocket.DefaultDialer.Dial(SocketModeURL, header)
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
-		s.logger.Error("Failed to connect to Slack", "error", err, "status_code", func() int {
+		s.logger.Error("Failed to connect to Slack WebSocket", "error", err, "status_code", func() int {
 			if resp != nil {
 				return resp.StatusCode
 			}
@@ -125,6 +131,55 @@ func (s *SocketModeConnection) connect() error {
 	go s.readLoop()
 
 	return nil
+}
+
+// getWebSocketURL calls Slack's apps.connections.open API to get the WebSocket URL
+func (s *SocketModeConnection) getWebSocketURL() (string, error) {
+	// Use App-Level Token (xapp-*) for the API call - NOT Bot Token
+	if s.config.AppToken == "" {
+		return "", fmt.Errorf("app token is required for apps.connections.open")
+	}
+
+	req, err := http.NewRequestWithContext(s.ctx, "POST",
+		"https://slack.com/api/apps.connections.open", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Use App-Level Token (xapp-*), not Bot Token
+	req.Header.Set("Authorization", "Bearer "+s.config.AppToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("apps.connections.open returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		OK    bool   `json:"ok"`
+		URL   string `json:"url"`
+		Error string `json:"error"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !result.OK {
+		return "", fmt.Errorf("apps.connections.open failed: %s", result.Error)
+	}
+
+	if result.URL == "" {
+		return "", fmt.Errorf("apps.connections.open returned empty URL")
+	}
+
+	return result.URL, nil
 }
 
 // reconnect attempts to reconnect with exponential backoff

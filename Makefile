@@ -20,7 +20,7 @@ BUILD_TIME    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 LDFLAGS       := -s -w -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT)' -X 'main.BuildTime=$(BUILD_TIME)'
 
-.PHONY: all help build build-all fmt vet test test-unit test-race test-integration test-all lint tidy clean install-hooks run docs svg2png
+.PHONY: all help build build-all fmt vet test test-unit test-race test-integration test-all lint tidy clean install-hooks run stop restart docs svg2png
 
 # Default target
 all: help
@@ -47,6 +47,10 @@ help: ## Show this help message
 	@printf "\n"
 
 build: fmt vet tidy ## Compile the hotplexd daemon
+	@printf "${GREEN}🚀 Building HotPlex Daemon (${VERSION})...${NC}\n"
+	@mkdir -p $(DIST_DIR)
+	@go build -a -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME) $(CMD_PATH)
+	@printf "${GREEN}✅ Build complete: ${DIST_DIR}/$(BINARY_NAME)${NC}\n"
 	@printf "${GREEN}🚀 Building HotPlex Daemon (${VERSION})...${NC}\n"
 	@mkdir -p $(DIST_DIR)
 	@go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME) $(CMD_PATH)
@@ -117,5 +121,23 @@ install-hooks: ## Install local Git hooks
 	@printf "${GREEN}✅ Hooks are active.${NC}\n"
 
 run: build ## Start the daemon locally
+	@printf "${PURPLE}🔥 Starting HotPlex Daemon...${NC}\n"
+	@./$(DIST_DIR)/$(BINARY_NAME)
+
+stop: ## Stop the running hotplexd daemon
+	@printf "${YELLOW}🛑 Stopping HotPlex Daemon...${NC}\n"
+	@if pgrep -f $(BINARY_NAME) > /dev/null 2>&1; then \
+		pkill -f $(BINARY_NAME); \
+		sleep 1; \
+		if pgrep -f $(BINARY_NAME) > /dev/null 2>&1; then \
+			pkill -9 -f $(BINARY_NAME); \
+		fi; \
+		printf "${GREEN}✅ Daemon stopped${NC}\n"; \
+	else \
+		printf "${YELLOW}⚠️  No running daemon found${NC}\n"; \
+	fi
+
+restart: stop run ## Restart the daemon (stop + run)
+	@
 	@printf "${PURPLE}🔥 Starting HotPlex Daemon...${NC}\n"
 	@./$(DIST_DIR)/$(BINARY_NAME)
