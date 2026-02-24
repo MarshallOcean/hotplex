@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hrygo/hotplex/event"
@@ -34,6 +35,8 @@ type Engine struct {
 	provider       provider.Provider
 	manager        intengine.SessionManager
 	dangerDetector *security.Detector
+	// mu protects runtime configuration updates (AllowedTools, DisallowedTools)
+	mu sync.RWMutex
 }
 
 // NewEngine creates a new HotPlex Engine instance.
@@ -271,7 +274,7 @@ func (r *Engine) executeWithMultiplex(
 	sess.SetCallback(intengine.Callback(r.createEventBridge(cfg, callback, stats, doneChan)))
 
 	// Build provider-specific input message payload
-	// 2. Send input - Skip if this was a cold start and the provider handles initial prompt via CLI args
+	// 2. Send input - Skip if this was a cold start and the provider handles initial prompt as CLI args
 	if created && r.provider.Metadata().Features.RequiresInitialPromptAsArg {
 		r.logger.Debug("Skipping Stdin injection for cold-start (already passed via CLI args)",
 			"namespace", r.opts.Namespace,
@@ -555,4 +558,48 @@ func (r *Engine) SetDangerAllowPaths(paths []string) {
 // WARNING: Only use for Evolution mode (admin only).
 func (r *Engine) SetDangerBypassEnabled(token string, enabled bool) error {
 	return r.dangerDetector.SetBypassEnabled(token, enabled)
+}
+
+// Runtime security configuration update methods for Engine.
+// These allow hot reloading of AllowedTools and DisallowedTools at runtime.
+// All methods are protected by Engine's internal mutex for concurrent safety.
+
+// SetAllowedTools sets the allowed tools for the engine.
+// This affects new sessions created after the call.
+// Thread-safe: uses internal mutex.
+func (r *Engine) SetAllowedTools(tools []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.opts.AllowedTools = tools
+	r.logger.Info("Allowed tools updated", "tools", tools)
+}
+
+// SetDisallowedTools sets the disallowed tools for the engine.
+// This affects new sessions created after the call.
+// Thread-safe: uses internal mutex.
+func (r *Engine) SetDisallowedTools(tools []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.opts.DisallowedTools = tools
+	r.logger.Info("Disallowed tools updated", "tools", tools)
+}
+
+// GetAllowedTools returns the current allowed tools list.
+// Thread-safe: uses internal mutex.
+func (r *Engine) GetAllowedTools() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.opts.AllowedTools
+}
+
+// GetDisallowedTools returns the current disallowed tools list.
+// Thread-safe: uses internal mutex.
+func (r *Engine) GetDisallowedTools() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.opts.DisallowedTools
 }

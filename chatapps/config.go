@@ -1,6 +1,7 @@
 package chatapps
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hrygo/hotplex/config"
 	"github.com/hrygo/hotplex/provider"
 	"gopkg.in/yaml.v3"
 )
@@ -31,15 +33,17 @@ type EngineConfig struct {
 type Logger = slog.Logger
 
 type ConfigLoader struct {
-	configs map[string]*PlatformConfig
-	mu      sync.RWMutex
-	logger  *slog.Logger
+	configs      map[string]*PlatformConfig
+	mu           sync.RWMutex
+	logger       *slog.Logger
+	hotReloaders map[string]*config.YAMLHotReloader
 }
 
 func NewConfigLoader(configDir string, logger *slog.Logger) (*ConfigLoader, error) {
 	loader := &ConfigLoader{
-		configs: make(map[string]*PlatformConfig),
-		logger:  logger,
+		configs:      make(map[string]*PlatformConfig),
+		hotReloaders: make(map[string]*config.YAMLHotReloader),
+		logger:       logger,
 	}
 
 	if err := loader.Load(configDir); err != nil {
@@ -91,7 +95,9 @@ func (c *ConfigLoader) GetConfig(platform string) *PlatformConfig {
 	defer c.mu.RUnlock()
 
 	if cfg, ok := c.configs[platform]; ok {
-		return cfg // Return direct pointer for full access
+		// Return a deep copy to prevent external mutation without holding locks
+		copy := *cfg
+		return &copy
 	}
 	return nil
 }
@@ -160,4 +166,73 @@ func deepCopyMap(original map[string]any) map[string]any {
 		return nil
 	}
 	return copy
+}
+
+// StartHotReload starts watching all config files for changes and automatically reloads them.
+// The onReload callback is called with the updated PlatformConfig for each platform.
+func (c *ConfigLoader) StartHotReload(ctx context.Context, configDir string, onReload func(platform string, cfg *PlatformConfig)) error {
+	entries, err := os.ReadDir(configDir)
+	if err != nil {
+		return fmt.Errorf("read config dir: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+
+		filename := filepath.Join(configDir, entry.Name())
+		platformName := entry.Name()[:len(entry.Name())-len(".yaml")]
+
+		// Create initial config for this platform
+		var initialCfg PlatformConfig
+		reloader, err := config.NewYAMLHotReloader(filename, &initialCfg, c.logger)
+		if err != nil {
+			c.logger.Warn("Failed to create hot reloader", "file", filename, "error", err)
+			continue
+		}
+
+		// Set up reload callback
+		reloader.OnReload(func(cfg any) {
+			if updatedCfg, ok := cfg.(*PlatformConfig); ok {
+				c.mu.Lock()
+				c.configs[platformName] = updatedCfg
+				c.mu.Unlock()
+
+				c.logger.Info("Config hot reloaded", "platform", platformName)
+				if onReload != nil {
+					onReload(platformName, updatedCfg)
+				}
+			}
+		})
+
+		// Start watching
+		if err := reloader.Start(ctx); err != nil {
+			c.logger.Warn("Failed to start hot reloader", "file", filename, "error", err)
+			continue
+		}
+
+		c.mu.Lock()
+		c.hotReloaders[platformName] = reloader
+		c.mu.Unlock()
+	}
+
+	return nil
+}
+
+// Close stops all hot reload watchers and releases resources.
+func (c *ConfigLoader) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var lastErr error
+	for platform, reloader := range c.hotReloaders {
+		if err := reloader.Close(); err != nil {
+			c.logger.Error("Failed to close hot reloader", "platform", platform, "error", err)
+			lastErr = err
+		}
+	}
+	c.hotReloaders = make(map[string]*config.YAMLHotReloader)
+
+	return lastErr
 }
