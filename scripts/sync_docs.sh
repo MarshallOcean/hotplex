@@ -72,6 +72,7 @@ safe_cp "$DOCS_DIR/benchmark-report_zh.md" "$TARGET_ROOT/guide/performance_zh.md
 safe_cp "$DOCS_DIR/chatapps/chatapps-guide.md" "$TARGET_ROOT/guide/chatapps.md"
 safe_cp "$DOCS_DIR/chatapps/chatapps-slack.md" "$TARGET_ROOT/guide/chatapps-slack.md"
 safe_cp "$DOCS_DIR/chatapps/slack-gap-analysis.md" "$TARGET_ROOT/guide/slack-gap-analysis.md"
+safe_cp "$DOCS_DIR/chatapps/chatapps-dingtalk-analysis.md" "$TARGET_ROOT/guide/chatapps-dingtalk.md"
 
 # --- SDKs ---
 log_info "Syncing SDK files..."

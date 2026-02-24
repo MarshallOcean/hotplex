@@ -242,5 +242,5 @@ A: 请检查：
 
 ## 相关资源
 - [Slack 适配器用户手册](./chatapps-slack.md) - 完整的 Slack 配置与部署指南
-- [  - [Slack 差距分析报告](./slack-gap-analysis.md)
+- [Slack 差距分析报告](./slack-gap-analysis.md)
 - [钉钉双向通讯技术方案](./chatapps-dingtalk-analysis.md)
