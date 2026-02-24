@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hrygo/hotplex/chatapps/base"
@@ -191,6 +192,7 @@ func createEngineForPlatform(pc *PlatformConfig, logger *slog.Logger) (*engine.E
 
 // expandPath expands ~ to the user's home directory and cleans the path.
 // Supports both ~ and ~/path formats.
+// Returns an empty string if the path contains traversal attacks.
 func expandPath(path string) string {
 	if len(path) == 0 {
 		return path
@@ -217,5 +219,48 @@ func expandPath(path string) string {
 	}
 
 	// Clean the path to resolve any . or .. elements
-	return filepath.Clean(path)
+	cleaned := filepath.Clean(path)
+
+	// Security check: detect path traversal attempts
+	// After cleaning, paths starting with / are absolute
+	// Paths starting with .. are attempting to escape the current directory
+	if strings.HasPrefix(cleaned, "/") {
+		// Absolute path - check for common system directories
+		if isSensitivePath(cleaned) {
+			return "" // Block access to sensitive paths
+		}
+	}
+
+	return cleaned
+}
+
+// isSensitivePath checks if a path points to a sensitive system location
+func isSensitivePath(path string) bool {
+	// List of sensitive directories to block
+	sensitivePrefixes := []string{
+		"/etc/",
+		"/etc",
+		"/var/",
+		"/var",
+		"/usr/",
+		"/usr",
+		"/bin",
+		"/sbin",
+		"/root",
+		"/proc/",
+		"/proc",
+		"/sys/",
+		"/sys",
+		"/boot",
+		"/dev/",
+		"/dev",
+	}
+
+	lowerPath := strings.ToLower(path)
+	for _, prefix := range sensitivePrefixes {
+		if strings.HasPrefix(lowerPath, prefix) {
+			return true
+		}
+	}
+	return false
 }

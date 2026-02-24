@@ -350,11 +350,8 @@ func (s *SocketModeConnection) handleEventsAPI(payload json.RawMessage, envelope
 	// Send ACK to Slack to confirm receipt of the event
 	// Slack expects a response with the envelope_id within 3 seconds
 	if envelopeID != "" {
-		ack := map[string]any{
-			"envelope_id": envelopeID,
-		}
-		if err := s.Send(ack); err != nil {
-			s.logger.Warn("Failed to send ACK for envelope", "envelope_id", envelopeID, "error", err)
+		if err := s.sendACKWithRetry(envelopeID, 3, 1*time.Second); err != nil {
+			s.logger.Error("Failed to send ACK after retries", "envelope_id", envelopeID, "error", err)
 		} else {
 			s.logger.Debug("Sent ACK for envelope", "envelope_id", envelopeID)
 		}
@@ -362,6 +359,34 @@ func (s *SocketModeConnection) handleEventsAPI(payload json.RawMessage, envelope
 
 	// The payload IS the event_callback structure, pass it directly
 	s.handleEventCallback(payload)
+}
+
+// sendACKWithRetry sends an ACK with exponential backoff retry
+// maxRetries: maximum number of retry attempts
+// baseDelay: initial delay between retries
+func (s *SocketModeConnection) sendACKWithRetry(envelopeID string, maxRetries int, baseDelay time.Duration) error {
+	ack := map[string]any{
+		"envelope_id": envelopeID,
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: delay = baseDelay * 2^(attempt-1)
+			delay := baseDelay * time.Duration(1<<(attempt-1))
+			s.logger.Debug("Retrying ACK send", "envelope_id", envelopeID, "attempt", attempt, "delay", delay)
+			time.Sleep(delay)
+		}
+
+		if err := s.Send(ack); err != nil {
+			lastErr = err
+			s.logger.Warn("ACK send attempt failed", "envelope_id", envelopeID, "attempt", attempt+1, "maxRetries", maxRetries+1, "error", err)
+			continue
+		}
+		return nil // Success
+	}
+
+	return fmt.Errorf("ACK send failed after %d attempts: %w", maxRetries+1, lastErr)
 }
 
 // sendPong sends a pong response to keep the connection alive
