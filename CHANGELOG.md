@@ -1,3 +1,95 @@
+## [v0.11.0] - 2026-02-25
+
+### 🔐 Slack 安全增强与可靠性提升
+
+This release addresses critical security and reliability gaps identified in the [Slack Gap Analysis Report](docs/chatapps/slack-gap-analysis.md). We've implemented comprehensive path traversal protection, Socket Mode ACK retry mechanism, and extensive documentation.
+
+### Added
+- **Path Traversal Attack Protection**:
+  - New `expandPath()` function with `~` expansion to user home directory
+  - New `isSensitivePath()` function blocking access to system directories (`/etc`, `/var`, `/usr`, `/bin`, `/sbin`, `/root`, `/proc`, `/sys`, `/boot`, `/dev`)
+  - Automatic detection and blocking of path traversal attempts (e.g., `../etc/passwd`)
+  - Safe path cleaning with `filepath.Clean` for relative paths
+  
+- **Socket Mode ACK Retry Mechanism**:
+  - New `sendACKWithRetry()` function with exponential backoff (1s → 2s → 4s)
+  - Maximum 3 retries (4 total attempts) for reliable message delivery
+  - Slack API compliant 3-second response requirement
+  - Comprehensive logging for debugging connection issues
+  
+- **Comprehensive Unit Tests**:
+  - 26 test cases for `expandPath()` covering normal paths, edge cases, and security scenarios
+  - 10 test cases for `isSensitivePath()` covering all blocked directories
+  - 93.8% test coverage for path handling functions
+  - New test file `chatapps/setup_test.go` (+279 lines)
+  
+- **Gap Analysis Report** ([Issue #21](https://github.com/hrygo/hotplex/issues/21)):
+  - Comprehensive 416-line comparison: HotPlex vs OpenClaw Slack implementations
+  - 30+ feature gaps identified across 6 categories (P0/P1/P2 priority)
+  - 3-phase implementation roadmap (14-20 weeks estimated)
+  - Technical debt risk identification
+  
+- **Documentation Updates**:
+  - System prompt configuration guide with injection flow diagram
+  - Security features documentation (path checks, ACK retry, signature verification)
+  - Troubleshooting examples (Q5: System prompt not生效，Q6: Path blocked)
+  - Example environment files (`.env.development`, `.env.production`)
+
+### Changed
+- **Configuration Enhancements** (`chatapps/configs/slack.yaml`):
+  - Detailed path security documentation with examples
+  - ACK retry mechanism explanation
+  - System prompt injection flow description
+  - Complete troubleshooting section
+  
+- **User Manual** (`docs/chatapps/chatapps-slack.md`):
+  - Added Chapter 7: System Prompt Configuration
+  - Added Chapter 8: Security Features
+  - Updated changelog with v0.10.0, v0.9.0, v0.8.0
+  
+- **Code Quality**:
+  - Project-wide lint cleanup
+  - Improved error handling in path expansion
+  - Enhanced logging for security events
+
+### Fixed
+- **Duplicate Message Processing** ([PR #23](https://github.com/hrygo/hotplex/pull/23)):
+  - Removed duplicate `handleEventsAPI()` call in Socket Mode
+  - Added empty payload validation
+  - Fixed potential message duplication issue
+  
+- **Security Vulnerabilities**:
+  - Blocked access to sensitive system directories
+  - Prevented path traversal attacks via `..` sequences
+  - Hardened path validation with multiple security layers
+
+### Technical Details
+- **Files Changed**: 7 files
+- **Lines Added**: +1,256
+- **Lines Removed**: -140
+- **Net Change**: +1,116 lines
+- **Test Coverage**: 93.8%+ (41 test cases)
+
+### Verification
+```bash
+✅ go test ./... - All tests pass
+✅ go build ./... - Build succeeds
+✅ golangci-lint run - 0 issues
+✅ Path security - Blocks /etc, /var, /root successfully
+✅ ACK retry - Handles connection failures
+```
+
+### Contributors
+- [@hrygo](https://github.com/hrygo)
+
+### Related
+- **PR**: [#23](https://github.com/hrygo/hotplex/pull/23)
+- **Issue**: [#21](https://github.com/hrygo/hotplex/issues/21)
+- **Release**: [v0.11.0](https://github.com/hrygo/hotplex/releases/tag/v0.11.0)
+- **Gap Analysis**: [docs/chatapps/slack-gap-analysis.md](docs/chatapps/slack-gap-analysis.md)
+
+---
+
 ## [v0.10.0] - 2026-02-23
 
 ### 🚀 ChatApps-as-a-Service Milestone (v0.10.0)
