@@ -43,12 +43,16 @@ export default defineConfig({
             { text: 'Quick Start', link: '/guide/quick-start' },
           ]
         },
+        {
+          text: 'Core Concepts',
           items: [
             { text: 'Architecture', link: '/guide/architecture' },
             { text: 'Security & Isolation', link: '/guide/security' },
             { text: 'Event Hooks System', link: '/guide/hooks' }
           ]
         },
+        {
+          text: 'Integrations',
           items: [
             { text: 'WebSocket Protocol', link: '/guide/websocket' },
             { text: 'OpenCode HTTP/SSE', link: '/guide/opencode-http' },
@@ -57,6 +61,8 @@ export default defineConfig({
             { text: 'Slack Gap Analysis', link: '/guide/slack-gap-analysis' }
           ]
         },
+        {
+          text: 'Advanced',
           items: [
             { text: 'Observability (OTel/Prom)', link: '/guide/observability' },
             { text: 'Docker Execution', link: '/guide/docker' }
