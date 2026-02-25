@@ -54,6 +54,11 @@ const (
 
 	// EventTypeRaw indicates unparsed raw output (fallback).
 	EventTypeRaw ProviderEventType = "raw"
+
+	// EventTypePermissionRequest indicates a permission request from Claude Code.
+	// This event type is used when Claude Code requests user approval for tool execution.
+	// Format: {"type":"permission_request","session_id":"...","permission":{"name":"Bash","input":"..."}}
+	EventTypePermissionRequest ProviderEventType = "permission_request"
 )
 
 // ProviderEvent represents a normalized event from any AI CLI provider.

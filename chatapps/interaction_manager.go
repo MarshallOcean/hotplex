@@ -1,6 +1,7 @@
 package chatapps
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -23,6 +24,11 @@ type PendingInteraction struct {
 	Callback     InteractionCallback
 	CreatedAt    time.Time
 	ExpiresAt    time.Time
+	Type         InteractionType
+	ThreadTS     string
+	Status       InteractionStatus
+	Response     *InteractionResponse
+	Metadata     map[string]any
 }
 
 // InteractionManager manages pending interactions for Slack interactive components.
@@ -227,4 +233,150 @@ func (m *InteractionManager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.pending)
+}
+
+// InteractionType defines the type of interactive message.
+type InteractionType string
+
+const (
+	// InteractionTypePermission is for Claude Code permission requests (Issue #39).
+	InteractionTypePermission InteractionType = "permission"
+	// InteractionTypeApproval is for general approval requests (Issue #37).
+	InteractionTypeApproval InteractionType = "approval"
+	// InteractionTypeSelection is for selection/choice requests.
+	InteractionTypeSelection InteractionType = "selection"
+)
+
+// InteractionStatus is the status of a pending interaction.
+type InteractionStatus string
+
+const (
+	InteractionStatusPending   InteractionStatus = "pending"
+	InteractionStatusCompleted InteractionStatus = "completed"
+	InteractionStatusExpired   InteractionStatus = "expired"
+	InteractionStatusCancelled InteractionStatus = "cancelled"
+)
+
+// InteractionResponse represents the user's response to an interaction.
+type InteractionResponse struct {
+	ActionID    string    `json:"action_id"`
+	Value       string    `json:"value"`
+	UserID      string    `json:"user_id"`
+	RespondedAt time.Time `json:"responded_at"`
+}
+
+// IsExpired returns true if the interaction has expired.
+func (p *PendingInteraction) IsExpired() bool {
+	return time.Now().After(p.ExpiresAt)
+}
+
+// TimeUntilExpiry returns the duration until the interaction expires.
+func (p *PendingInteraction) TimeUntilExpiry() time.Duration {
+	return time.Until(p.ExpiresAt)
+}
+
+// GetBySession retrieves all pending interactions for a session.
+func (m *InteractionManager) GetBySession(sessionID string) []*PendingInteraction {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var results []*PendingInteraction
+	for _, interaction := range m.pending {
+		if interaction.SessionID == sessionID && !time.Now().After(interaction.ExpiresAt) {
+			results = append(results, interaction)
+		}
+	}
+
+	return results
+}
+
+// Complete marks an interaction as completed with a response.
+func (m *InteractionManager) Complete(id string, response *InteractionResponse) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	interaction, exists := m.pending[id]
+	if !exists {
+		return fmt.Errorf("interaction %s not found", id)
+	}
+
+	if time.Now().After(interaction.ExpiresAt) {
+		return fmt.Errorf("interaction %s has expired", id)
+	}
+
+	interaction.Status = InteractionStatusCompleted
+	interaction.Response = response
+
+	m.logger.Debug("InteractionManager: completed interaction",
+		"id", id,
+		"response_value", response.Value)
+
+	return nil
+}
+
+// Expire marks an interaction as expired.
+func (m *InteractionManager) Expire(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	interaction, exists := m.pending[id]
+	if !exists {
+		return fmt.Errorf("interaction %s not found", id)
+	}
+
+	interaction.Status = InteractionStatusExpired
+
+	m.logger.Debug("InteractionManager: expired interaction", "id", id)
+	return nil
+}
+
+// PendingCount returns the number of pending (non-expired) interactions.
+func (m *InteractionManager) PendingCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, interaction := range m.pending {
+		if !interaction.IsExpired() && interaction.Status == InteractionStatusPending {
+			count++
+		}
+	}
+	return count
+}
+
+// TotalCount returns the total number of interactions (including expired).
+func (m *InteractionManager) TotalCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.pending)
+}
+
+// GenerateInteractionID generates a unique interaction ID.
+func GenerateInteractionID(sessionID string, timestamp time.Time) string {
+	return fmt.Sprintf("int_%s_%d", sessionID, timestamp.UnixNano())
+}
+
+// CreatePendingInteraction creates a new PendingInteraction with default values.
+func CreatePendingInteraction(
+	sessionID string,
+	userID string,
+	channelID string,
+	interactionType InteractionType,
+	metadata map[string]any,
+	ttl time.Duration,
+) *PendingInteraction {
+	now := time.Now()
+
+	return &PendingInteraction{
+		ID:        GenerateInteractionID(sessionID, now),
+		Type:      interactionType,
+		SessionID: sessionID,
+		UserID:    userID,
+		ChannelID: channelID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(ttl),
+		Metadata:  metadata,
+		Status:    InteractionStatusPending,
+		ThreadTS:  "",
+	}
 }

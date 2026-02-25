@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/hrygo/hotplex/event"
+	"github.com/hrygo/hotplex/provider"
 )
 
 // BlockBuilder builds Slack Block Kit messages for various event types
@@ -726,4 +727,129 @@ func TruncateText(text string, maxLen int) string {
 		return text
 	}
 	return text[:maxLen] + "..."
+}
+
+// =============================================================================
+// Permission Request Blocks (Issue #39)
+// =============================================================================
+
+// BuildPermissionRequestBlocks builds Slack Block Kit for a Claude Code permission request.
+// It displays the tool name, command preview, and approval/denial buttons.
+func BuildPermissionRequestBlocks(req *provider.PermissionRequest, sessionID string) []map[string]any {
+	tool, input := req.GetToolAndInput()
+
+	// Truncate long commands for preview
+	displayInput := input
+	if len(displayInput) > 500 {
+		displayInput = displayInput[:497] + "..."
+	}
+
+	blocks := []map[string]any{}
+
+	// Header
+	blocks = append(blocks, map[string]any{
+		"type": "header",
+		"text": plainText("⚠️ Permission Request"),
+	})
+
+	// Tool information
+	if tool != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("*Tool:* `%s`", tool)),
+		})
+	}
+
+	// Command/Action preview
+	if displayInput != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("*Command:*\n```\n%s\n```", displayInput)),
+		})
+	}
+
+	// Decision reason (if available)
+	if req.Decision != nil && req.Decision.Reason != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "context",
+			"elements": []map[string]any{
+				mrkdwnText(fmt.Sprintf("*Reason:* %s", req.Decision.Reason)),
+			},
+		})
+	}
+
+	// Session info
+	blocks = append(blocks, map[string]any{
+		"type": "context",
+		"elements": []map[string]any{
+			mrkdwnText(fmt.Sprintf("Session: `%s`", sessionID)),
+		},
+	})
+
+	// Action buttons
+	blocks = append(blocks, map[string]any{
+		"type":     "actions",
+		"block_id": fmt.Sprintf("perm_%s", req.MessageID),
+		"elements": []map[string]any{
+			{
+				"type":      "button",
+				"text":      plainText("✅ Allow"),
+				"action_id": "perm_allow",
+				"style":     "primary",
+				"value":     fmt.Sprintf("allow:%s:%s", sessionID, req.MessageID),
+			},
+			{
+				"type":      "button",
+				"text":      plainText("🚫 Deny"),
+				"action_id": "perm_deny",
+				"style":     "danger",
+				"value":     fmt.Sprintf("deny:%s:%s", sessionID, req.MessageID),
+			},
+		},
+	})
+
+	return blocks
+}
+
+// BuildPermissionApprovedBlocks builds blocks to show after permission is approved.
+func BuildPermissionApprovedBlocks(tool, input string) []map[string]any {
+	// Truncate for display
+	displayInput := input
+	if len(displayInput) > 200 {
+		displayInput = displayInput[:197] + "..."
+	}
+
+	return []map[string]any{
+		{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("✅ *Permission Granted*\n\nTool: `%s`\nCommand: `%s`", tool, displayInput)),
+		},
+	}
+}
+
+// BuildPermissionDeniedBlocks builds blocks to show after permission is denied.
+func BuildPermissionDeniedBlocks(tool, input, reason string) []map[string]any {
+	// Truncate for display
+	displayInput := input
+	if len(displayInput) > 200 {
+		displayInput = displayInput[:197] + "..."
+	}
+
+	blocks := []map[string]any{
+		{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("🚫 *Permission Denied*\n\nTool: `%s`\nCommand: `%s`", tool, displayInput)),
+		},
+	}
+
+	if reason != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "context",
+			"elements": []map[string]any{
+				mrkdwnText(fmt.Sprintf("Reason: %s", reason)),
+			},
+		})
+	}
+
+	return blocks
 }

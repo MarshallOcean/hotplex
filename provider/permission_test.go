@@ -5,43 +5,7 @@ import (
 	"testing"
 )
 
-// PermissionRequest represents a permission request from Claude Code.
-// Format as described in GitHub Issue #39.
-// Note: Claude Code has two permission request formats:
-// 1. Legacy format with "permission" object: {"type":"permission_request","permission":{"name":"bash","input":"cmd"}}
-// 2. Current format with "decision" object: {"type":"permission_request","decision":{"type":"ask","options":[...]}}
-type PermissionRequest struct {
-	Type      string          `json:"type"`
-	SessionID string          `json:"session_id,omitempty"`
-	MessageID string          `json:"message_id,omitempty"`
-	Decision  *DecisionDetail `json:"decision,omitempty"`
-	// Legacy format (Issue #39 original description)
-	Permission *PermissionDetail `json:"permission,omitempty"`
-}
-
-// PermissionDetail contains the permission details (legacy format).
-// Used when Claude Code requests permission for a specific tool/action.
-type PermissionDetail struct {
-	Name  string `json:"name"`            // Tool name (e.g., "bash", "Read", "Edit")
-	Input string `json:"input,omitempty"` // Tool input (e.g., command to execute)
-}
-
-// DecisionDetail contains the permission decision details.
-type DecisionDetail struct {
-	Type    string `json:"type"`
-	Reason  string `json:"reason,omitempty"`
-	Options []struct {
-		Name string `json:"name"`
-	} `json:"options,omitempty"`
-}
-
-// PermissionResponse represents the response sent to Claude Code stdin.
-// Format: {"behavior": "allow"} or {"behavior": "deny", "message": "User rejected"}
-type PermissionResponse struct {
-	Behavior string `json:"behavior"`
-	Message  string `json:"message,omitempty"`
-}
-
+// TestPermissionRequest_Parse validates the permission_request format from Claude Code.
 // TestPermissionRequest_Parse validates the permission_request format from Claude Code.
 // Reference: GitHub Issue #39 - Claude Code 权限确认 ↔ Slack 交互桥接调研
 func TestPermissionRequest_Parse(t *testing.T) {

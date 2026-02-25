@@ -134,19 +134,19 @@ func (r *Engine) Execute(ctx context.Context, cfg *types.Config, prompt string, 
 		return fmt.Errorf("failed to create work directory: %w", err)
 	}
 
-	// Send thinking event
+	// Send initial thinking event for immediate UX feedback
+	// This will be updated when CLI sends actual thinking content
 	if callbackSafe := event.WrapSafe(r.logger, callback); callbackSafe != nil {
 		meta := &event.EventMeta{
 			Status:          "running",
 			TotalDurationMs: 0,
 		}
-		_ = callbackSafe("thinking", event.NewEventWithMeta("thinking", "ai.thinking", meta))
+		_ = callbackSafe("thinking", event.NewEventWithMeta("thinking", "Initializing...", meta))
 	}
 
 	r.logger.Info("Engine: starting execution pipeline",
 		"namespace", r.opts.Namespace,
-		"session_id", cfg.SessionID,
-	)
+		"session_id", cfg.SessionID)
 
 	// Execute via multiplexed persistent session
 	if err := r.executeWithMultiplex(ctx, cfg, prompt, callback); err != nil {
@@ -489,6 +489,7 @@ func (r *Engine) dispatchNormalizedCallback(pevt *provider.ProviderEvent, callba
 		stats.StartThinking()
 		defer stats.EndThinking()
 		meta := &event.EventMeta{Status: "running", TotalDurationMs: totalDur}
+		r.logger.Debug("[RUNNER] Dispatching thinking event", "content", pevt.Content)
 		return callback("thinking", event.NewEventWithMeta("thinking", pevt.Content, meta))
 
 	case provider.EventTypeToolUse:

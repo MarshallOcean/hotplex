@@ -8,6 +8,7 @@ type StreamMessage struct {
 	Type         string            `json:"type"`
 	Timestamp    string            `json:"timestamp,omitempty"`
 	SessionID    string            `json:"session_id,omitempty"`
+	MessageID    string            `json:"message_id,omitempty"`
 	Role         string            `json:"role,omitempty"`
 	Name         string            `json:"name,omitempty"`
 	Output       string            `json:"output,omitempty"`
@@ -20,6 +21,9 @@ type StreamMessage struct {
 	TotalCostUSD float64           `json:"total_cost_usd,omitempty"`
 	Usage        *UsageStats       `json:"usage,omitempty"`
 	Result       string            `json:"result,omitempty"`
+	// Permission request fields (Issue #39)
+	Permission *PermissionDetail `json:"permission,omitempty"`
+	Decision   *DecisionDetail   `json:"decision,omitempty"`
 }
 
 // UsageStats represents the token consumption breakdown.

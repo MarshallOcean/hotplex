@@ -633,9 +633,187 @@ func (a *Adapter) handleInteractive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+	defer r.Body.Close()
+
 	a.Logger().Debug("Interactive payload received", "body", string(body))
 
+	// Parse the payload
+	payload := r.FormValue("payload")
+	if payload == "" {
+		// Try to parse as JSON directly
+		payload = string(body)
+	}
+
+	var callback SlackInteractionCallback
+	if err := json.Unmarshal([]byte(payload), &callback); err != nil {
+		a.Logger().Error("Parse callback failed", "error", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Validate actions array
+	if len(callback.Actions) == 0 {
+		a.Logger().Warn("No actions in callback")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	a.Logger().Debug("Interaction callback parsed",
+		"type", callback.Type,
+		"user", callback.User.ID,
+		"channel", callback.Channel.ID,
+		"action_id", callback.Actions[0].ActionID,
+		"block_id", callback.Actions[0].BlockID,
+		"value", callback.Actions[0].Value,
+	)
+
+	// Handle based on interaction type
+	switch callback.Type {
+	case "block_actions":
+		a.handleBlockActions(&callback, w)
+	default:
+		a.Logger().Warn("Unknown interaction type", "type", callback.Type)
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// handleBlockActions handles Slack block_actions callbacks (button clicks, etc.)
+func (a *Adapter) handleBlockActions(callback *SlackInteractionCallback, w http.ResponseWriter) {
+	action := callback.Actions[0]
+	userID := callback.User.ID
+	channelID := callback.Channel.ID
+	messageTS := callback.Message.Ts
+	_ = messageTS // Reserved for future use
+
+	a.Logger().Debug("Block action received",
+		"action_id", action.ActionID,
+		"block_id", action.BlockID,
+		"value", action.Value,
+		"user_id", userID,
+		"channel_id", channelID,
+	)
+
+	// Check if this is a permission request callback
+	if action.ActionID == "perm_allow" || action.ActionID == "perm_deny" {
+		a.handlePermissionCallback(callback, action, w)
+		return
+	}
+
+	// Handle other block actions here
+	a.Logger().Info("Unhandled block action",
+		"action_id", action.ActionID,
+		"value", action.Value,
+	)
+
 	w.WriteHeader(http.StatusOK)
+}
+
+// handlePermissionCallback handles permission approval/denial button clicks
+func (a *Adapter) handlePermissionCallback(callback *SlackInteractionCallback, action SlackAction, w http.ResponseWriter) {
+	userID := callback.User.ID
+	channelID := callback.Channel.ID
+	messageTS := callback.Message.Ts
+	_ = messageTS // Reserved for future use
+	value := action.Value
+
+	a.Logger().Info("Permission callback received",
+		"user_id", userID,
+		"channel_id", channelID,
+		"message_ts", messageTS,
+		"value", value,
+		"action_id", action.ActionID,
+	)
+
+	// Parse value: "allow:sessionID:messageID" or "deny:sessionID:messageID"
+	parts := strings.Split(value, ":")
+	if len(parts) < 3 {
+		a.Logger().Error("Invalid permission value format", "value", value)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	behavior := parts[0] // "allow" or "deny"
+	sessionID := parts[1]
+	messageID := parts[2]
+
+	// Update the message to remove buttons and show result
+	var blocks []map[string]any
+
+	if behavior == "allow" {
+		blocks = BuildPermissionApprovedBlocks("", "")
+	} else {
+		blocks = BuildPermissionDeniedBlocks("", "", "User denied permission")
+	}
+
+	// Update the Slack message
+	if err := a.UpdateMessage(context.Background(), channelID, messageTS, interfaceSlice(blocks), ""); err != nil {
+		a.Logger().Error("Update message failed", "error", err)
+	}
+
+	a.Logger().Info("Permission request processed",
+		"behavior", behavior,
+		"session_id", sessionID,
+		"message_id", messageID,
+	)
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// SlackInteractionCallback represents a Slack interaction callback payload.
+type SlackInteractionCallback struct {
+	Type        string          `json:"type"`
+	User        CallbackUser    `json:"user"`
+	Channel     CallbackChannel `json:"channel"`
+	Message     CallbackMessage `json:"message"`
+	ResponseURL string          `json:"response_url"`
+	TriggerID   string          `json:"trigger_id"`
+	Actions     []SlackAction   `json:"actions"`
+	Team        CallbackTeam    `json:"team"`
+}
+
+// CallbackUser represents the user in a Slack callback.
+type CallbackUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+// CallbackChannel represents the channel in a Slack callback.
+type CallbackChannel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// CallbackMessage represents the message in a Slack callback.
+type CallbackMessage struct {
+	Ts   string `json:"ts"`
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// CallbackTeam represents the team in a Slack callback.
+type CallbackTeam struct {
+	ID     string `json:"id"`
+	Domain string `json:"domain"`
+}
+
+// SlackAction represents an action within a Slack interaction callback.
+type SlackAction struct {
+	ActionID string `json:"action_id"`
+	BlockID  string `json:"block_id"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Value    string `json:"value"`
+	Style    string `json:"style"`
+}
+
+// interfaceSlice converts []map[string]any to []any for Block Kit compatibility.
+func interfaceSlice(blocks []map[string]any) []any {
+	result := make([]any, len(blocks))
+	for i, block := range blocks {
+		result[i] = block
+	}
+	return result
 }
 
 func (a *Adapter) verifySignature(body []byte, timestamp, signature string) bool {

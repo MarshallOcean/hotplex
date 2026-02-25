@@ -96,6 +96,7 @@ type StreamCallback struct {
 	mu           sync.Mutex
 	isFirst      bool
 	thinkingSent bool            // Tracks if thinking message was sent
+	thinkingTS   string          // Timestamp of the thinking message for updates
 	metadata     map[string]any  // Original message metadata (channel_id, thread_ts, etc.)
 	processor    *ProcessorChain // Message processor chain
 	blockBuilder *slack.BlockBuilder
@@ -175,40 +176,39 @@ func (c *StreamCallback) Handle(eventType string, data any) error {
 }
 
 func (c *StreamCallback) handleThinking(data any) error {
+	// Extract thinking content from EventWithMeta
+	var thinkingContent string
+	if m, ok := data.(*event.EventWithMeta); ok {
+		// Use EventData directly (contains thinking content from CLI)
+		thinkingContent = m.EventData
+	}
+
+	// Log what we received
+	c.logger.Debug("handleThinking received",
+		"data_type", fmt.Sprintf("%T", data),
+		"event_data", thinkingContent,
+		"is_first", c.isFirst,
+		"thinking_sent", c.thinkingSent)
+
+	// Skip empty thinking content
+	if thinkingContent == "" {
+		return nil
+	}
+
 	if c.isFirst {
+		// First thinking event - create new message
 		c.isFirst = false
 		c.thinkingSent = true
 
-		// Extract thinking content from EventWithMeta
-		var thinkingContent string
-		if m, ok := data.(*event.EventWithMeta); ok {
-			// Try EventData first (from runner.go callback)
-			if m.EventData != "" && m.EventData != "thinking" {
-				thinkingContent = m.EventData
-			}
-			// Try Meta fields
-			if thinkingContent == "" && m.Meta != nil {
-				if m.Meta.Status != "" {
-					thinkingContent = m.Meta.Status
-				}
-			}
-		}
-
-		// Log what we received
-		c.logger.Debug("handleThinking received",
-			"data_type", fmt.Sprintf("%T", data),
-			"event_data", func() string {
-				if m, ok := data.(*event.EventWithMeta); ok {
-					return m.EventData
-				}
-				return ""
-			}(),
-			"using_content", thinkingContent)
-
-		// Build thinking block with actual content
 		blocks := c.blockBuilder.BuildThinkingBlock(thinkingContent)
 		return c.sendBlockMessage(string(provider.EventTypeThinking), blocks, true)
+	} else if c.thinkingSent {
+		// Subsequent thinking event - update the existing message
+		// This allows streaming thinking content updates
+		blocks := c.blockBuilder.BuildThinkingBlock(thinkingContent)
+		return c.sendBlockMessage(string(provider.EventTypeThinking), blocks, false)
 	}
+
 	return nil
 }
 
