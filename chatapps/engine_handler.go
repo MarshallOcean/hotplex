@@ -154,6 +154,9 @@ func (c *StreamCallback) Handle(eventType string, data any) error {
 		if eventType == "danger_block" {
 			return c.handleDangerBlock(data)
 		}
+		if eventType == "session_stats" {
+			return c.handleSessionStats(data)
+		}
 		c.logger.Debug("Ignoring unknown event", "type", eventType)
 	}
 	return nil
@@ -263,6 +266,24 @@ func (c *StreamCallback) handleDangerBlock(data any) error {
 	}
 	blocks := c.blockBuilder.BuildErrorBlock(reason, true)
 	return c.sendBlockMessage("security_block", blocks, true)
+}
+
+// handleSessionStats handles session statistics events
+func (c *StreamCallback) handleSessionStats(data any) error {
+	stats, ok := data.(*event.SessionStatsData)
+	if !ok {
+		c.logger.Debug("session_stats: invalid data type", "type", fmt.Sprintf("%T", data))
+		return nil
+	}
+
+	// Build rich session stats UI using card style (recommended default)
+	blocks := c.blockBuilder.BuildSessionStatsBlock(stats, slack.StatsStyleCard)
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	// Send stats as informational message (not final)
+	return c.sendBlockMessage("session_stats", blocks, false)
 }
 
 // sendBlockMessage sends a message with Slack blocks

@@ -398,6 +398,310 @@ func (b *BlockBuilder) BuildDividerBlock() []map[string]any {
 }
 
 // =============================================================================
+// Session Statistics Blocks - Enhanced UI
+// =============================================================================
+
+// SessionStatsStyle defines the visual style for session statistics
+type SessionStatsStyle string
+
+const (
+	// StatsStyleCompact - Minimal single-line summary
+	StatsStyleCompact SessionStatsStyle = "compact"
+	// StatsStyleCard - Rich card with emoji indicators (recommended)
+	StatsStyleCard SessionStatsStyle = "card"
+	// StatsStyleDetailed - Full breakdown with all metrics
+	StatsStyleDetailed SessionStatsStyle = "detailed"
+)
+
+// BuildSessionStatsBlock builds a rich statistics summary block
+// Used for: session_stats events at end of each turn
+// Strategy: Send as final summary with visual polish
+func (b *BlockBuilder) BuildSessionStatsBlock(stats *event.SessionStatsData, style SessionStatsStyle) []map[string]any {
+	if stats == nil {
+		return []map[string]any{}
+	}
+
+	switch style {
+	case StatsStyleCompact:
+		return b.buildCompactStats(stats)
+	case StatsStyleDetailed:
+		return b.buildDetailedStats(stats)
+	case StatsStyleCard:
+		fallthrough
+	default:
+		return b.buildCardStats(stats)
+	}
+}
+
+// buildCompactStats creates a minimal single-line summary
+func (b *BlockBuilder) buildCompactStats(stats *event.SessionStatsData) []map[string]any {
+	if stats.TotalTokens == 0 && stats.TotalDurationMs == 0 {
+		return []map[string]any{}
+	}
+
+	var parts []string
+
+	// Duration
+	if stats.TotalDurationMs > 0 {
+		parts = append(parts, fmt.Sprintf("⏱️ %s", formatDuration(stats.TotalDurationMs)))
+	}
+
+	// Tokens
+	if stats.TotalTokens > 0 {
+		parts = append(parts, fmt.Sprintf("📊 %d tokens", stats.TotalTokens))
+	}
+
+	// Cost (only if > 0)
+	if stats.TotalCostUSD > 0.0001 {
+		parts = append(parts, fmt.Sprintf("💰 $%.4f", stats.TotalCostUSD))
+	}
+
+	// Tools (only if used)
+	if len(stats.ToolsUsed) > 0 {
+		parts = append(parts, fmt.Sprintf("🔧 %d tools", len(stats.ToolsUsed)))
+	}
+
+	// Files (only if modified)
+	if stats.FilesModified > 0 {
+		parts = append(parts, fmt.Sprintf("📁 %d files", stats.FilesModified))
+	}
+
+	if len(parts) == 0 {
+		return []map[string]any{}
+	}
+
+	return []map[string]any{
+		{
+			"type": "context",
+			"elements": []map[string]any{
+				mrkdwnText(strings.Join(parts, " • ")),
+			},
+		},
+	}
+}
+
+// buildCardStats creates a visually appealing card-style summary (recommended)
+func (b *BlockBuilder) buildCardStats(stats *event.SessionStatsData) []map[string]any {
+	if stats.TotalTokens == 0 && stats.TotalDurationMs == 0 {
+		return []map[string]any{}
+	}
+
+	var blocks []map[string]any
+
+	// Header with session complete indicator
+	headerBlock := map[string]any{
+		"type": "header",
+		"text": plainText("✅ Session Complete"),
+	}
+	blocks = append(blocks, headerBlock)
+
+	// Build metrics grid (2 columns for better space usage)
+	var fields []map[string]any
+
+	// Row 1: Duration + Tokens
+	fields = append(fields, mrkdwnText(fmt.Sprintf("*⏱️ Duration*\n%s", formatDuration(stats.TotalDurationMs))))
+	fields = append(fields, mrkdwnText(fmt.Sprintf("*📊 Tokens*\n%d in / %d out", stats.InputTokens, stats.OutputTokens)))
+
+	// Row 2: Cost + Model (if available)
+	if stats.TotalCostUSD > 0.0001 {
+		fields = append(fields, mrkdwnText(fmt.Sprintf("*💰 Cost*\n$%.4f", stats.TotalCostUSD)))
+	} else {
+		fields = append(fields, mrkdwnText("*💰 Cost*\n_Usage-based_"))
+	}
+
+	if stats.ModelUsed != "" {
+		modelShort := stats.ModelUsed
+		if len(modelShort) > 20 {
+			modelShort = modelShort[:17] + "..."
+		}
+		fields = append(fields, mrkdwnText(fmt.Sprintf("*🤖 Model*\n%s", modelShort)))
+	}
+
+	// Row 3: Tools (if used)
+	if len(stats.ToolsUsed) > 0 {
+		toolsStr := strings.Join(stats.ToolsUsed, ", ")
+		if len(toolsStr) > 40 {
+			toolsStr = toolsStr[:37] + "..."
+		}
+		fields = append(fields, mrkdwnText(fmt.Sprintf("*🔧 Tools Used*\n%s", toolsStr)))
+	}
+
+	// Row 4: Files (if modified)
+	if stats.FilesModified > 0 {
+		fields = append(fields, mrkdwnText(fmt.Sprintf("*📁 Files Modified*\n%d file(s)", stats.FilesModified)))
+	}
+
+	// Ensure even number of fields for proper 2-column layout
+	if len(fields)%2 != 0 {
+		fields = append(fields, mrkdwnText("*_*\n_")) // Empty placeholder
+	}
+
+	if len(fields) > 0 {
+		fieldsBlock := map[string]any{
+			"type":   "section",
+			"fields": fields,
+		}
+		blocks = append(blocks, fieldsBlock)
+	}
+
+	// Add cache info if present
+	if stats.CacheReadTokens > 0 || stats.CacheWriteTokens > 0 {
+		cacheText := "📦 *Cache: "
+		if stats.CacheReadTokens > 0 {
+			cacheText += fmt.Sprintf("read %d", stats.CacheReadTokens)
+		}
+		if stats.CacheWriteTokens > 0 {
+			if stats.CacheReadTokens > 0 {
+				cacheText += ", "
+			}
+			cacheText += fmt.Sprintf("write %d", stats.CacheWriteTokens)
+		}
+		cacheText += "*"
+
+		cacheBlock := map[string]any{
+			"type": "context",
+			"elements": []map[string]any{
+				mrkdwnText(cacheText),
+			},
+		}
+		blocks = append(blocks, cacheBlock)
+	}
+
+	// Add file paths if available (up to 3)
+	if len(stats.FilePaths) > 0 {
+		var filesText string
+		maxFiles := 3
+		if len(stats.FilePaths) > maxFiles {
+			filesText = fmt.Sprintf("📄 *%d files modified:* ", len(stats.FilePaths))
+			for i := 0; i < maxFiles; i++ {
+				if i > 0 {
+					filesText += ", "
+				}
+				// Extract just filename from path
+				parts := strings.Split(stats.FilePaths[i], "/")
+				filesText += "`" + parts[len(parts)-1] + "`"
+			}
+			filesText += " _and more_"
+		} else {
+			filesText = "📄 *Files modified:* "
+			for i, p := range stats.FilePaths {
+				if i > 0 {
+					filesText += ", "
+				}
+				parts := strings.Split(p, "/")
+				filesText += "`" + parts[len(parts)-1] + "`"
+			}
+		}
+
+		filesBlock := map[string]any{
+			"type": "context",
+			"elements": []map[string]any{
+				mrkdwnText(filesText),
+			},
+		}
+		blocks = append(blocks, filesBlock)
+	}
+
+	return blocks
+}
+
+// buildDetailedStats creates a comprehensive breakdown with all metrics
+func (b *BlockBuilder) buildDetailedStats(stats *event.SessionStatsData) []map[string]any {
+	if stats.TotalTokens == 0 && stats.TotalDurationMs == 0 {
+		return []map[string]any{}
+	}
+
+	var blocks []map[string]any
+
+	// Header
+	headerBlock := map[string]any{
+		"type": "header",
+		"text": plainText("📊 Session Statistics Report"),
+	}
+	blocks = append(blocks, headerBlock)
+
+	// Performance Section
+	perfBlock := map[string]any{
+		"type": "section",
+		"text": mrkdwnText("*⚡ Performance*"),
+	}
+	blocks = append(blocks, perfBlock)
+
+	var perfFields []map[string]any
+	perfFields = append(perfFields, mrkdwnText(fmt.Sprintf("*Total Duration*\n%s", formatDuration(stats.TotalDurationMs))))
+
+	if stats.ThinkingDurationMs > 0 {
+		perfFields = append(perfFields, mrkdwnText(fmt.Sprintf("*Thinking*\n%s", formatDuration(stats.ThinkingDurationMs))))
+	}
+	if stats.ToolDurationMs > 0 {
+		perfFields = append(perfFields, mrkdwnText(fmt.Sprintf("*Tool Execution*\n%s", formatDuration(stats.ToolDurationMs))))
+	}
+	if stats.GenerationDurationMs > 0 {
+		perfFields = append(perfFields, mrkdwnText(fmt.Sprintf("*Generation*\n%s", formatDuration(stats.GenerationDurationMs))))
+	}
+
+	if len(perfFields)%2 != 0 {
+		perfFields = append(perfFields, mrkdwnText("*_*\n_"))
+	}
+	perfBlock["fields"] = perfFields
+
+	// Token Usage Section
+	tokenBlock := map[string]any{
+		"type": "section",
+		"text": mrkdwnText("*📈 Token Usage*"),
+	}
+	blocks = append(blocks, tokenBlock)
+
+	var tokenFields []map[string]any
+	tokenFields = append(tokenFields, mrkdwnText(fmt.Sprintf("*Input*\n%d tokens", stats.InputTokens)))
+	tokenFields = append(tokenFields, mrkdwnText(fmt.Sprintf("*Output*\n%d tokens", stats.OutputTokens)))
+	tokenFields = append(tokenFields, mrkdwnText(fmt.Sprintf("*Total*\n%d tokens", stats.TotalTokens)))
+
+	if stats.CacheReadTokens > 0 {
+		tokenFields = append(tokenFields, mrkdwnText(fmt.Sprintf("*Cache Read*\n%d tokens", stats.CacheReadTokens)))
+	}
+	if stats.CacheWriteTokens > 0 {
+		tokenFields = append(tokenFields, mrkdwnText(fmt.Sprintf("*Cache Write*\n%d tokens", stats.CacheWriteTokens)))
+	}
+
+	if len(tokenFields)%2 != 0 {
+		tokenFields = append(tokenFields, mrkdwnText("*_*\n_"))
+	}
+	tokenBlock["fields"] = tokenFields
+
+	// Cost Section
+	if stats.TotalCostUSD > 0 {
+		costBlock := map[string]any{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("*💰 Total Cost*: `$%.4f USD`", stats.TotalCostUSD)),
+		}
+		blocks = append(blocks, costBlock)
+	}
+
+	// Tools Section
+	if len(stats.ToolsUsed) > 0 {
+		toolsBlock := map[string]any{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("*🔧 Tools Invoked* (%d total)*\n`%s`",
+				stats.ToolCallCount, strings.Join(stats.ToolsUsed, "`, `"))),
+		}
+		blocks = append(blocks, toolsBlock)
+	}
+
+	// Files Section
+	if len(stats.FilePaths) > 0 {
+		filesBlock := map[string]any{
+			"type": "section",
+			"text": mrkdwnText(fmt.Sprintf("*📁 Files Modified* (%d total)*\n`%s`",
+				len(stats.FilePaths), strings.Join(stats.FilePaths, "`, `"))),
+		}
+		blocks = append(blocks, filesBlock)
+	}
+
+	return blocks
+}
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 
