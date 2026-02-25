@@ -157,7 +157,7 @@ func (p *ClaudeCodeProvider) ParseEvent(line string) (*ProviderEvent, error) {
 		}
 		p.logger.Debug("[PROVIDER] Raw tool event from CLI", "line", line[:lineLen])
 	}
-	
+
 	var msg StreamMessage
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		// Not valid JSON, return as raw content
@@ -200,11 +200,41 @@ func (p *ClaudeCodeProvider) ParseEvent(line string) (*ProviderEvent, error) {
 
 	case "thinking", "status":
 		event.Type = EventTypeThinking
-		for _, block := range msg.GetContentBlocks() {
-			if block.Type == "text" && block.Text != "" {
+		// Check both msg.Content (direct) and msg.Message.Content (nested)
+		allBlocks := msg.GetContentBlocks()
+		p.logger.Debug("[PROVIDER] Raw thinking event",
+			"has_direct_content", len(msg.Content) > 0,
+			"has_message_content", msg.Message != nil && len(msg.Message.Content) > 0,
+			"direct_content", msg.Content,
+			"blocks_count", len(allBlocks))
+
+		// Try to extract text from blocks
+		for _, block := range allBlocks {
+			p.logger.Debug("[PROVIDER] Thinking block",
+				"type", block.Type,
+				"text", block.Text)
+			if block.Text != "" {
 				event.Content = block.Text
 				break
 			}
+		}
+
+		// Fallback 1: Check status field
+		if event.Content == "" && msg.Status != "" {
+			event.Content = msg.Status
+			p.logger.Debug("[PROVIDER] Using status as thinking content", "status", msg.Status)
+		}
+
+		// Fallback 2: Check subtype field
+		if event.Content == "" && msg.Subtype != "" {
+			event.Content = msg.Subtype
+			p.logger.Debug("[PROVIDER] Using subtype as thinking content", "subtype", msg.Subtype)
+		}
+
+		// Final fallback: use generic thinking text
+		if event.Content == "" {
+			event.Content = "Thinking..."
+			p.logger.Debug("[PROVIDER] Using default thinking text")
 		}
 
 	case "tool_use":

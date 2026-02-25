@@ -213,12 +213,18 @@ func (f *MrkdwnFormatter) FormatCodeBlock(code, language string) string {
 // BuildThinkingBlock builds a context block for thinking status
 // Used for: provider.EventTypeThinking
 // Strategy: Send immediately (not aggregated) for instant feedback
-func (b *BlockBuilder) BuildThinkingBlock() []map[string]any {
+func (b *BlockBuilder) BuildThinkingBlock(content string) []map[string]any {
+	// Use actual thinking content if available, fallback to default
+	displayText := content
+	if displayText == "" {
+		displayText = "Thinking..."
+	}
+
 	return []map[string]any{
 		{
 			"type": "context",
 			"elements": []map[string]any{
-				mrkdwnText(":brain: _Thinking..._"),
+				mrkdwnText(fmt.Sprintf(":brain: _%s_", displayText)),
 			},
 		},
 	}

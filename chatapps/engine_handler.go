@@ -99,6 +99,17 @@ type StreamCallback struct {
 	metadata     map[string]any  // Original message metadata (channel_id, thread_ts, etc.)
 	processor    *ProcessorChain // Message processor chain
 	blockBuilder *slack.BlockBuilder
+
+	// Stream state for throttled updates
+	streamState *StreamState
+}
+
+// StreamState tracks the state for streaming updates
+type StreamState struct {
+	ChannelID   string
+	MessageTS   string
+	LastUpdated time.Time
+	mu          sync.Mutex
 }
 
 // NewStreamCallback creates a new StreamCallback
@@ -163,12 +174,39 @@ func (c *StreamCallback) Handle(eventType string, data any) error {
 	return nil
 }
 
-func (c *StreamCallback) handleThinking(_ any) error {
+func (c *StreamCallback) handleThinking(data any) error {
 	if c.isFirst {
 		c.isFirst = false
 		c.thinkingSent = true
-		// Build thinking block
-		blocks := c.blockBuilder.BuildThinkingBlock()
+
+		// Extract thinking content from EventWithMeta
+		var thinkingContent string
+		if m, ok := data.(*event.EventWithMeta); ok {
+			// Try EventData first (from runner.go callback)
+			if m.EventData != "" && m.EventData != "thinking" {
+				thinkingContent = m.EventData
+			}
+			// Try Meta fields
+			if thinkingContent == "" && m.Meta != nil {
+				if m.Meta.Status != "" {
+					thinkingContent = m.Meta.Status
+				}
+			}
+		}
+
+		// Log what we received
+		c.logger.Debug("handleThinking received",
+			"data_type", fmt.Sprintf("%T", data),
+			"event_data", func() string {
+				if m, ok := data.(*event.EventWithMeta); ok {
+					return m.EventData
+				}
+				return ""
+			}(),
+			"using_content", thinkingContent)
+
+		// Build thinking block with actual content
+		blocks := c.blockBuilder.BuildThinkingBlock(thinkingContent)
 		return c.sendBlockMessage(string(provider.EventTypeThinking), blocks, true)
 	}
 	return nil
@@ -176,13 +214,13 @@ func (c *StreamCallback) handleThinking(_ any) error {
 
 func (c *StreamCallback) handleToolUse(data any) error {
 	c.logger.Debug("[TOOL] handleToolUse called", "data_type", fmt.Sprintf("%T", data))
-	
+
 	toolName := string(provider.EventTypeToolUse)
 	input := ""
 	truncated := false
 
 	if m, ok := data.(*event.EventWithMeta); ok {
-		c.logger.Debug("[TOOL] handleToolUse EventWithMeta", 
+		c.logger.Debug("[TOOL] handleToolUse EventWithMeta",
 			"event_data", m.EventData,
 			"meta_tool_name", m.Meta.ToolName,
 			"meta_input_summary", m.Meta.InputSummary)
@@ -204,7 +242,7 @@ func (c *StreamCallback) handleToolUse(data any) error {
 
 func (c *StreamCallback) handleToolResult(data any) error {
 	c.logger.Debug("[TOOL] handleToolResult called", "data_type", fmt.Sprintf("%T", data))
-	
+
 	success := true
 	var durationMs int64
 	output := ""
@@ -241,21 +279,27 @@ func (c *StreamCallback) handleAnswer(data any) error {
 		c.logger.Debug("Clearing thinking state for answer")
 	}
 
-	var content string
+	var answerContent string
 	switch v := data.(type) {
 	case string:
-		content = v
+		answerContent = v
 	case *event.EventWithMeta:
-		content = v.EventData
+		answerContent = v.EventData
 	default:
-		content = fmt.Sprintf("%v", data)
+		answerContent = fmt.Sprintf("%v", data)
 	}
 
-	if content == "" {
+	if answerContent == "" {
 		return nil
 	}
 
-	blocks := c.blockBuilder.BuildAnswerBlock(content)
+	// Use throttled streaming update if we have a message to update
+	if c.streamState != nil {
+		return c.streamState.updateThrottled(c.ctx, c.adapters, c.platform, c.sessionID, answerContent, c.blockBuilder, c.metadata)
+	}
+
+	// Otherwise send as new message
+	blocks := c.blockBuilder.BuildAnswerBlock(answerContent)
 	return c.sendBlockMessage(string(provider.EventTypeAnswer), blocks, false)
 }
 
@@ -327,6 +371,11 @@ func (c *StreamCallback) sendBlockMessage(content string, blocks []map[string]an
 	metadata["stream"] = true
 	metadata["event_type"] = content
 	metadata["is_final"] = isFinal
+
+	// Initialize stream state on first non-thinking message
+	if content != string(provider.EventTypeThinking) && c.streamState == nil {
+		c.streamState = &StreamState{}
+	}
 
 	// Convert blocks to []any for RichContent
 	var blocksAny []any
@@ -521,4 +570,68 @@ func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) err
 	}
 
 	return nil
+}
+
+// updateThrottled sends throttled streaming updates to Slack
+// Limits updates to 1 per second to avoid rate limiting
+func (s *StreamState) updateThrottled(ctx context.Context, adapters *AdapterManager, platform, sessionID, content string, blockBuilder *slack.BlockBuilder, metadata map[string]any) error {
+	s.mu.Lock()
+
+	// Throttle: max 1 update per second
+	if time.Since(s.LastUpdated) < time.Second {
+		s.mu.Unlock()
+		return nil
+	}
+	s.LastUpdated = time.Time{} // Mark as updating
+	s.mu.Unlock()
+
+	// Build blocks with content
+	blocks := blockBuilder.BuildAnswerBlock(content)
+
+	// Convert blocks to []any
+	var blocksAny []any
+	for _, b := range blocks {
+		blocksAny = append(blocksAny, b)
+	}
+
+	// Create chat message for update
+	msg := &ChatMessage{
+		Platform:  platform,
+		SessionID: sessionID,
+		Content:   content,
+		RichContent: &RichContent{
+			Blocks: blocksAny,
+		},
+		Metadata: make(map[string]any),
+	}
+
+	// Copy metadata
+	for k, v := range metadata {
+		msg.Metadata[k] = v
+	}
+
+	// Add thread_ts if present
+	if threadTS, ok := metadata["thread_ts"]; ok {
+		msg.Metadata["thread_ts"] = threadTS
+	}
+
+	// Update existing message
+	if s.ChannelID != "" && s.MessageTS != "" {
+		msg.Metadata["message_ts"] = s.MessageTS
+		msg.Metadata["channel_id"] = s.ChannelID
+	}
+
+	// Send update
+	err := adapters.SendMessage(ctx, platform, sessionID, msg)
+
+	// Update timestamp on success
+	s.mu.Lock()
+	if err == nil {
+		s.LastUpdated = time.Now()
+	} else {
+		s.LastUpdated = time.Time{} // Reset on error to allow retry
+	}
+	s.mu.Unlock()
+
+	return err
 }

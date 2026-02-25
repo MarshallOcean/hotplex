@@ -477,9 +477,9 @@ func (r *Engine) dispatchNormalizedCallback(pevt *provider.ProviderEvent, callba
 
 	// Debug: Log tool events
 	if pevt.Type == provider.EventTypeToolUse || pevt.Type == provider.EventTypeToolResult {
-		r.logger.Debug("[RUNNER] Dispatching tool event", 
-			"type", pevt.Type, 
-			"tool_name", pevt.ToolName, 
+		r.logger.Debug("[RUNNER] Dispatching tool event",
+			"type", pevt.Type,
+			"tool_name", pevt.ToolName,
 			"tool_id", pevt.ToolID,
 			"status", pevt.Status)
 	}

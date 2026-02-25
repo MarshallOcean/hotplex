@@ -20,7 +20,7 @@ func TestBlockBuilder_NewBlockBuilder(t *testing.T) {
 func TestBlockBuilder_BuildThinkingBlock(t *testing.T) {
 	t.Run("returns correct block structure", func(t *testing.T) {
 		bb := NewBlockBuilder()
-		blocks := bb.BuildThinkingBlock()
+		blocks := bb.BuildThinkingBlock("")
 
 		if len(blocks) != 1 {
 			t.Fatalf("expected 1 block, got %d", len(blocks))
@@ -52,7 +52,7 @@ func TestBlockBuilder_BuildThinkingBlock(t *testing.T) {
 
 	t.Run("produces valid JSON", func(t *testing.T) {
 		bb := NewBlockBuilder()
-		blocks := bb.BuildThinkingBlock()
+		blocks := bb.BuildThinkingBlock("")
 
 		_, err := json.Marshal(blocks)
 		if err != nil {
@@ -614,7 +614,7 @@ func TestTruncateText(t *testing.T) {
 func TestBlockBuilder_JsonSerialization(t *testing.T) {
 	t.Run("BuildThinkingBlock serializes correctly", func(t *testing.T) {
 		bb := NewBlockBuilder()
-		blocks := bb.BuildThinkingBlock()
+		blocks := bb.BuildThinkingBlock("")
 		jsonBytes, err := json.Marshal(blocks)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
@@ -738,7 +738,7 @@ func TestBlockBuilder_SlackAPICompliance(t *testing.T) {
 			name   string
 			blocks []map[string]any
 		}{
-			{"BuildThinkingBlock", bb.BuildThinkingBlock()},
+			{"BuildThinkingBlock", bb.BuildThinkingBlock("")},
 			{"BuildToolUseBlock", bb.BuildToolUseBlock("Test", "input", false)},
 			{"BuildToolResultBlock", bb.BuildToolResultBlock(true, 100, "out", false)},
 			{"BuildErrorBlock", bb.BuildErrorBlock("err", false)},
@@ -783,7 +783,7 @@ func TestBlockBuilder_SlackAPICompliance(t *testing.T) {
 
 	t.Run("context elements use mrkdwn", func(t *testing.T) {
 		bb := NewBlockBuilder()
-		blocks := bb.BuildThinkingBlock()
+		blocks := bb.BuildThinkingBlock("")
 
 		elements := blocks[0]["elements"].([]map[string]any)
 		if elements[0]["type"] != "mrkdwn" {
