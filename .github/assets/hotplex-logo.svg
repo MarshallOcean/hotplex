@@ -11,67 +11,41 @@
       <stop offset="100%" stop-color="#58A6FF" /> </linearGradient>
     
     <linearGradient id="text-hot-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" class="hot-stop-1" />
-      <stop offset="100%" class="hot-stop-2" />
+      <stop offset="0%" stop-color="#FFAB70" />
+      <stop offset="100%" stop-color="#FF7B72" />
     </linearGradient>
     
     <linearGradient id="text-plex-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FF7B72" />
-      <stop offset="100%" stop-color="#F85149" />
+      <stop offset="0%" stop-color="#F85149" />
+      <stop offset="100%" stop-color="#D73A49" />
     </linearGradient>
 
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
-
-    <filter id="eye-glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="3" result="blur" />
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.345  0 0 0 0 0.651  0 0 0 0 1  0 0 0 1 0" />
+    <filter id="text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.2" />
+      <feOffset dx="0" dy="1" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3" />
+      </feComponentTransfer>
       <feMerge>
         <feMergeNode />
         <feMergeNode in="SourceGraphic" />
       </feMerge>
     </filter>
-    
-    <filter id="text-glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="2" result="blur" />
-      <feComponentTransfer in="blur" result="fadedBlur">
-        <feFuncA type="linear" slope="0.3" />
-      </feComponentTransfer>
-      <feMerge>
-        <feMergeNode in="fadedBlur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
 
     <style>
-      :root {
-        --hot-stop-1: #1F2328;
-        --hot-stop-2: #2D333B;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --hot-stop-1: #FFFFFF;
-          --hot-stop-2: #E6EDF3;
-        }
-      }
-      .hot-stop-1 { stop-color: var(--hot-stop-1); }
-      .hot-stop-2 { stop-color: var(--hot-stop-2); }
-
       @keyframes eyePulse {
         0%, 100% { filter: url(#eye-glow) brightness(1); opacity: 0.8; }
         50% { filter: url(#eye-glow) brightness(1.5); opacity: 1; }
       }
       @keyframes textShimmer {
-        0%, 100% { filter: url(#text-glow) brightness(1); }
-        50% { filter: url(#text-glow) brightness(1.2) drop-shadow(0 0 10px rgba(255,123,114,0.4)); }
+        0%, 100% { filter: url(#text-shadow) brightness(1); }
+        50% { filter: url(#text-shadow) brightness(1.1); }
       }
       .fox-eye {
         animation: eyePulse 2.5s infinite ease-in-out;
       }
       .hotplex-text {
-        animation: textShimmer 2.5s infinite ease-in-out;
+        animation: textShimmer 3s infinite ease-in-out;
       }
     </style>
   </defs>
@@ -102,7 +76,7 @@
   </g>
 
   <!-- Fixed overlapping by separating anchors -->
-  <g font-family="-apple-system, BlinkMacSystemFont, monospace" font-size="34" font-weight="900" class="hotplex-text">
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif" font-size="36" font-weight="900" class="hotplex-text" filter="url(#text-shadow)">
     <text x="198" y="360" text-anchor="end" fill="url(#text-hot-grad)">hot</text>
     <text x="198" y="360" text-anchor="start" fill="url(#text-plex-grad)">plex</text>
   </g>
