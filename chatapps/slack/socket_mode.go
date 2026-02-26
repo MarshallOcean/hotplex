@@ -300,6 +300,11 @@ func (s *SocketModeConnection) handleMessage(data []byte) {
 	}
 
 	// Log all incoming messages for debugging
+	s.logger.Debug("[SLACK_WS_MESSAGE] Received WebSocket message",
+		"type", msg.Type,
+		"envelope_id", msg.EnvelopeID,
+		"payload_len", len(msg.Payload),
+		"body_len", len(msg.Body))
 	s.logger.Info("[SLACK_WS_MESSAGE] Received WebSocket message",
 		"type", msg.Type,
 		"envelope_id", msg.EnvelopeID,
@@ -320,7 +325,7 @@ func (s *SocketModeConnection) handleMessage(data []byte) {
 	case "events_api":
 		// Socket Mode uses "events_api" with "payload" field
 		// payload contains the full event_callback structure
-		s.logger.Info("[SLACK_EVENTS_API] events_api received",
+		s.logger.Debug("[SLACK_EVENTS_API] events_api received",
 			"envelope_id", msg.EnvelopeID,
 			"payload_len", len(msg.Payload))
 		if len(msg.Payload) > 0 {
@@ -331,7 +336,7 @@ func (s *SocketModeConnection) handleMessage(data []byte) {
 
 	case "slash_commands":
 		// Slash commands are sent as direct message type in Socket Mode
-		s.logger.Info("[SLACK_SLASH_COMMAND] slash_commands received",
+		s.logger.Debug("[SLACK_SLASH_COMMAND] slash_commands received",
 			"envelope_id", msg.EnvelopeID)
 		if len(msg.Payload) > 0 {
 			s.handleSlashCommands(msg.Payload, msg.EnvelopeID)

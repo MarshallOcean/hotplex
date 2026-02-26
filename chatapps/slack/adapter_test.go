@@ -911,7 +911,6 @@ func TestIntegration_InteractiveEndpoint(t *testing.T) {
 	}
 }
 
-
 // TestConvertHashPrefixToSlash tests the #<command> to /<command> conversion
 func TestConvertHashPrefixToSlash(t *testing.T) {
 	tests := []struct {

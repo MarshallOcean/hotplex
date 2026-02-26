@@ -1291,6 +1291,8 @@ func (a *Adapter) UpdateMessage(ctx context.Context, channelID, messageTS string
 }
 
 // SUPPORTED_COMMANDS lists all slash commands supported by the system.
+
+// SUPPORTED_COMMANDS lists all slash commands supported by the system.
 // Used for matching #<command> prefix in messages (thread support).
 var SUPPORTED_COMMANDS = []string{"/reset", "/dc"}
 
