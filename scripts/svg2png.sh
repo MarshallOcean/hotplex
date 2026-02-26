@@ -28,11 +28,18 @@ OUTPUT_DIR="docs/images/png"
 ZOOM=4
 BACKGROUND=""
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Colors for output (only if TTY)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+else
+    RED=''
+    GREEN=''
+    BLUE=''
+    NC=''
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -163,7 +170,24 @@ main() {
 
     for asset in "${EXTRA_ASSETS[@]}"; do
         if [ -f "$asset" ]; then
-            convert_svg "$asset"
+            # For extra assets, we might want to output to their own directory
+            # or the output directory. The script logic currently uses filename
+            # which might clash. Let's ensure we use the base output dir.
+            local filename=$(basename "$asset" .svg)
+            local output_file="${OUTPUT_DIR}/${filename}.png"
+            
+            # Special case for .github/assets: output to the same directory
+            if [[ "$asset" == .github/assets/* ]]; then
+                output_file="${asset%.svg}.png"
+            fi
+            
+            # Build and run rsvg-convert
+            local cmd="rsvg-convert -z $ZOOM"
+            [ -n "$BACKGROUND" ] && cmd="$cmd --background-color=\"$BACKGROUND\""
+            cmd="$cmd -o \"$output_file\" \"$asset\""
+            
+            echo -e "  ${BLUE}→${NC} $(basename $asset) → PNG"
+            eval $cmd
         fi
     done
     
