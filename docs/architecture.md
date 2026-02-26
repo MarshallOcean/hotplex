@@ -16,22 +16,22 @@ hotplex follows a layered architecture with strict visibility rules, separating 
 - **`provider/`**: The abstraction layer for diverse AI CLI agents. Contains the `Provider` interface and concrete implementations for `claude-code` and `opencode`.
 - **`types/`**: Fundamental data structures (`Config`, `StreamMessage`, `UsageStats`).
 - **`event/`**: Unified event protocol and callback definitions (`Callback`, `EventWithMeta`).
-- **`chatapps/`**: **Platform Access Layer**. Connects HotPlex to social platforms (Slack, Discord, Telegram, etc.).
+- **`chatapps/`**: **Platform Access Layer**. Connects HotPlex to social platforms, primarily **Slack** (via Block Kit), but also supports Discord, Telegram, etc.
   - `engine_handler.go`: Bridges platform messages to Engine commands.
   - `manager.go`: Lifecycle management for bot adapters.
   - `processor_*.go`: Middleware chain for message formatting, rate limiting, and thread management.
-- **`internal/engine/`**: The core execution engine. Manages the `SessionPool` (process multiplexing) and `Session` (I/O piping and state management).
-- **`internal/persistence/`**: Session durability markers and pool recovery logic.
+- **`internal/engine/`**: The core execution engine. Manages the `SessionPool` (thread-safe process multiplexing) and `Session` (I/O piping and state management).
+- **`internal/persistence/`**: **Session Resiliency**. Manages the `SessionMarkerStore` for detecting and resuming persistent CLI sessions after system restarts.
 - **`internal/security/`**: The Regex-based WAF (`Detector`) for command auditing.
-- **`internal/config/`**: Hot-reloadable configuration watchers.
-- **`internal/sys/`**: Low-level OS primitives for cross-platform process group management (PGID) and signal handling.
+- **`internal/sys/`**: **Safety Primitives**. Cross-platform implementations for Process Group ID (PGID) management and signal cascading.
 - **`internal/server/`**: Protocol adapters. Contains `hotplex_ws.go` (WebSocket) and `opencode_http.go` (REST/SSE).
 - **`internal/strutil/`**: High-performance string manipulation and path cleaning.
 
 ### 1.2 Design Principles
 1.  **Public Thin, Private Thick**: The root package `hotplex` provides a stable, minimal API surface.
 2.  **Strategy Pattern (Provider)**: Decouples the engine from specific AI tools. `provider.Provider` allows switching backends without changing execution logic.
-3.  **IO-Driven State Machine**: `internal/engine` manages process states (Starting, Ready, Busy, Dead) using IO markers rather than fixed sleeps.
+3.  **PGID-First Security**: Security is not an afterthought; every execution is wrapped in a dedicated process group to prevent orphan leaks.
+4.  **IO-Driven State Machine**: `internal/engine` manages process states (Starting, Ready, Busy, Dead) using IO markers rather than fixed sleeps.
 
 ---
 
@@ -48,12 +48,15 @@ Standardizes diverse CLI protocols into a unified "HotPlex Event Stream":
 *   **Factory & Registry**: `ProviderFactory` manages provider instantiation, while `ProviderRegistry` caches active instances for reuse.
 
 ### 2.3 Session Manager (`internal/engine/pool.go`)
-*   **Hot-Multiplexing**: The `SessionPool` maintains a registry of active processes. Repeat requests to the same session skip the "Cold Start" (fork) and perform a "Hot Execution" (stdin injection).
+*   **Hot-Multiplexing**: The `SessionPool` maintains a registry of active processes. Repeat requests to the same sessionID perform a "Hot Execution" (stdin injection).
+*   **Slow Path Guard**: Accessing a session is thread-safe; simultaneous cold-start requests for the same ID are queued via a `pending` transition map to prevent redundant process forks.
 *   **Graceful GC**: Uses a `cleanupLoop` to sweep idle processes based on `IdleTimeout`.
 
-### 2.4 Security & Process Isolation (`internal/security/`, `internal/sys/`)
-*   **Regex WAF**: The `Detector` scans all input prompts for malicious intent (e.g., `rm -rf /`) as a final line of defense before reached the agent.
-*   **PGID Hard Isolation**: Ensures that the agent and any of its child processes (e.g., a build script) are assigned a unique Process Group ID. Termination kills the entire group via `SIGKILL` to prevent orphan processes.
+### 2.4 Security & Process Isolation (`internal/sys/`)
+To prevent "zombie" processes when an agent spawns background tasks, HotPlex enforces group-level isolation:
+*   **Unix**: Uses `setpgid(2)` on `fork()`. Termination sends `SIGKILL` to the negative PID (e.g., `kill -PID`), wiping the entire process tree.
+*   **Windows**: Uses **Job Objects** (`CreateJobObjectW`). Adds the `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag to ensure that when the primary Job handle closes, all associated sub-processes are guaranteed to be terminated by the OS.
+*   **WAF Detector**: Scans input prompts for malicious command strings (e.g., `rm -rf /`) before they reach the provider.
 
 ### 2.5 Event Hooks & Observability (`hooks/`, `telemetry/`)
 *   **Webhooks & Audit**: Asynchronously broadcasts payload events to external systems (Slack, Webhooks) without blocking the hot-execution path.
@@ -65,12 +68,12 @@ Standardizes diverse CLI protocols into a unified "HotPlex Event Stream":
 
 ```mermaid
 sequenceDiagram
-    participant Social as "Social Platforms (Slack/Discord/etc.)"
+    participant Social as "Slack / Social Platforms"
     participant ChatApps as "chatapps.EngineHandler"
     participant Client as "Client (WebSocket/SDK)"
     participant Server as "internal/server"
     participant Engine as "engine.Engine"
-    participant Hooks as "Event Hooks & OTel"
+    participant Storage as "internal/persistence"
     participant Pool as "internal/engine.SessionPool"
     participant Provider as "provider.Provider"
     participant Proc as "CLI Process (OS)"
@@ -88,8 +91,9 @@ sequenceDiagram
     Engine->>Pool: GetOrCreateSession(ID)
     
     alt Cold Start (Not in Pool)
+        Pool->>Storage: Check Marker (Resume?)
         Pool->>Provider: Build CLI Args/Env
-        Pool->>Proc: fork() with PGID
+        Pool->>Proc: fork() with PGID / Job Object
         Pool->>Proc: Inject Context/SystemPrompt
     end
     
@@ -102,7 +106,7 @@ sequenceDiagram
         
         alt Routing back to ChatApps
             Engine-->>ChatApps: Callback Event
-            ChatApps-->>Social: Platform-specific Response
+            ChatApps-->>Social: Platform-specific Response (Throttled 1/s)
         else Routing back to API
             Engine-->>Server: Public EventWithMeta
             Server-->>Client: WebSocket/SSE Event

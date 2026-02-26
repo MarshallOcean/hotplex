@@ -2,7 +2,7 @@
 
 # HotPlex Performance Benchmark Report
 
-> Generated: 2026-02-23
+> Generated: 2026-02-26
 > Version: `latest` (See Git Tags for exact build)
 > Environment: macOS (darwin), Go 1.24
 

@@ -24,13 +24,12 @@ Developer guides for interacting with HotPlex in server mode (WebSocket & OpenCo
 Deep-dive guides for specific AI CLI agents supported by HotPlex.
 - **[Claude Code Provider](providers/claudecode.md)**: Integration with Anthropic's Claude Code CLI.
 - **[OpenCode Provider](providers/opencode.md)**: Integration with the OpenCode CLI ecosystem.
-- **Aider Integration** (Removed in v0.8.3)
 
 ## 💬 ChatApps Integration
 - **[ChatApps Guide](chatapps/chatapps-guide.md)**: Architecture design and user manual for chat platform integration.
 - **[Slack Adapter](chatapps/chatapps-slack.md)**: User & developer manual for Slack full-duplex communication.
-
+- **[Slack Block Mapping](chatapps/engine-events-slack-mapping.md)**: Deep dive into Engine Event → Slack Block Kit mapping best practices.
 
 ---
 
-*Last Updated: 2026-02-23*
+*Last Updated: 2026-02-26*

@@ -36,7 +36,7 @@ Developers no longer need to endure the multi-second latency of restarting CLI e
 - 🧩 **Ease of Integration**: A unified Go SDK and protocol gateway that plugs top-tier Agent capabilities into your product instantly.
 - 🚀 **Zero Spin-up Overhead**: Eliminate the long wait times for Node.js/Python runtimes to provide sub-second user feedback.
 - 🛡️ **Fast & Balanced Security**: Command-level WAF and PGID isolation provide a "protective glove" for AI shell operations.
-- 💬 **Universal ChatApp Integration**: Native support for **Slack, DingTalk, Discord, Telegram, and WhatsApp** for zero-friction AI agent availability.
+- 💬 **ChatApps Integration**: Connect HotPlex to platforms like **Slack** (native Block Kit support), enabling AI collaboration directly in your team's workspace.
 - 🔌 **Ready for Scale**: Support for native Go embedding or standalone Proxy mode with WebSocket and OpenCode-compatible protocols.
 
 ---
@@ -196,6 +196,7 @@ We are actively evolving hotplex to become the definitive execution engine for t
 - [x] **Event Hooks**: Plugin system with Webhook, Slack, Feishu, DingTalk notifications.
 - [x] **Observability**: OpenTelemetry tracing + Prometheus metrics + Health endpoints (`/health`, `/metrics`).
 - [x] **Remote Execution**: Docker-based isolated sandbox execution.
+- [x] **Multi-Platform ChatApp Integration**: Native support for Slack (Block Kit/Socket Mode), DingTalk, Telegram, and Discord.
 - [x] **Multi-Language SDKs**: Go SDK, Python SDK, TypeScript SDK.
 - [x] **Hot Config Reload**: Runtime configuration updates without restart.
 - [x] **Stress Testing**: Validated for 1000+ concurrent sessions.
