@@ -349,7 +349,11 @@ func (b *BlockBuilder) BuildStatusBlock(statusType StatusType, content string) [
 		displayText = "Answer..."
 	default:
 		emoji = ":hourglass:"
-		displayText = content
+		if content == "" {
+			displayText = "Processing..."
+		} else {
+			displayText = content
+		}
 	}
 
 	return []map[string]any{

@@ -102,9 +102,9 @@ type StreamCallback struct {
 
 	// Status message state for dynamic event type indicator
 	// Reuses thinking message infrastructure for in-place updates
-	thinkingChannelID string // Channel ID for status message updates
-	thinkingMessageTS string // Message TS for status message updates
-	currentStatus     string // Current status type (thinking, tool_use, answer)
+	thinkingChannelID string           // Channel ID for status message updates
+	thinkingMessageTS string           // Message TS for status message updates
+	currentStatus     slack.StatusType // Current status type (thinking, tool_use, answer)
 
 	// Stream state for throttled updates
 	streamState *StreamState
@@ -304,7 +304,7 @@ func (c *StreamCallback) deleteThinkingMessage() error {
 // NOTE: Caller must hold c.mu lock before calling this method
 func (c *StreamCallback) updateStatusMessage(statusType slack.StatusType, displayText string) error {
 	// Skip if status hasn't changed (avoid redundant updates)
-	if c.currentStatus == string(statusType) && statusType != slack.StatusThinking {
+	if c.currentStatus == statusType && statusType != slack.StatusThinking {
 		return nil
 	}
 
@@ -321,7 +321,7 @@ func (c *StreamCallback) updateStatusMessage(statusType slack.StatusType, displa
 		// First status event - create new message
 		c.isFirst = false
 		c.thinkingSent = true
-		c.currentStatus = string(statusType)
+		c.currentStatus = statusType
 
 		// Send new message and capture ts for future updates
 		msg, err := c.buildThinkingMessage(blocks, true)
@@ -345,7 +345,7 @@ func (c *StreamCallback) updateStatusMessage(statusType slack.StatusType, displa
 		return nil
 	} else if c.thinkingSent {
 		// Subsequent status event - update the existing message
-		c.currentStatus = string(statusType)
+		c.currentStatus = statusType
 
 		if c.thinkingMessageTS != "" && c.thinkingChannelID != "" {
 			// Use message_ts to update existing message
