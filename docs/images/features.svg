@@ -45,11 +45,11 @@
 
   <!-- 3. WAF Security (RECONSTRUCTED COLOR/STANCE) -->
   <g transform="translate(525, 40)">
-    <rect width="215" height="160" rx="12" class="feature-card" style="stroke: #ff3b30; stroke-width: 1;"/>
+    <rect width="215" height="160" rx="12" class="feature-card" />
     <circle cx="108" cy="55" r="32" class="icon-bg c-sec" />
     <path d="M108 32 L125 40 V58 C125 68 118 78 108 82 C98 78 91 68 91 58 V40 L108 32 Z" class="icon-stroke c-sec" style="stroke-width: 3;"/>
     <path d="M100 55 L106 61 L116 49" class="icon-stroke c-sec" style="stroke-width: 3;"/>
-    <text x="108" y="115" text-anchor="middle" class="text-title" style="fill: #ff3b30;">WAF Security</text>
+    <text x="108" y="115" text-anchor="middle" class="text-title">WAF Security</text>
     <text x="108" y="135" text-anchor="middle" class="text-sub">Zero-Bypass Input Defense</text>
   </g>
 
