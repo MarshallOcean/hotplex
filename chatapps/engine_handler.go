@@ -303,6 +303,7 @@ func (c *StreamCallback) updateStatusMessage(statusType base.MessageType, displa
 		Metadata: c.copyMessageMetadata(),
 	}
 	msg.Metadata["stream"] = true
+	msg.Metadata["event_type"] = string(statusType) // Critical for aggregator to know event type
 
 	if c.isFirst {
 		// First status event - create new message
