@@ -674,8 +674,8 @@ func (a *Adapter) handleAppMentionEvent(ev *slackevents.AppMentionEvent) {
 		},
 	}
 
-	// Send to engine
-	a.Adapter.SendMessage(a.socketModeCtx, sessionID, msg)
+	// Send to handler via webhook.Run (not directly to Slack API)
+	a.webhook.Run(a.socketModeCtx, a.Handler(), msg)
 }
 
 // handleSocketModeMessageEvent handles message events via Socket Mode
@@ -748,7 +748,8 @@ func (a *Adapter) handleSocketModeMessageEvent(ev *slackevents.MessageEvent) {
 		msg.Metadata["thread_ts"] = ev.ThreadTimeStamp
 	}
 
-	a.Adapter.SendMessage(a.socketModeCtx, sessionID, msg)
+	// Send to handler via webhook.Run (not directly to Slack API)
+	a.webhook.Run(a.socketModeCtx, a.Handler(), msg)
 }
 
 // handleSocketModeSlashCommand handles slash commands via Socket Mode
