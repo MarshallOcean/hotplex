@@ -23,7 +23,7 @@ python3 scripts/verify_claude_features_offline.py --feature permission-request
 **验证内容**:
 - ✅ `provider/claude_provider.go` 事件解析逻辑
 - ✅ `provider/event.go` 事件类型定义
-- ✅ `docs/chatapps/engine-events-slack-mapping.md` 文档完整性
+- ✅ `docs/chatapps/engine-events-slack-ux-spec.md` 文档完整性
 
 ---
 
@@ -215,7 +215,7 @@ claude auth status --text
 **解决**:
 ```bash
 # 检查文件路径
-ls -la docs/chatapps/engine-events-slack-mapping.md
+ls -la docs/chatapps/engine-events-slack-ux-spec.md
 ls -la provider/claude_provider.go
 ls -la provider/event.go
 
@@ -243,7 +243,7 @@ timeout=120  # 秒
 - [Plan Mode 指南](https://code.claude.com/docs/en/plan-mode)
 - [AskUserQuestion 工具说明](https://claudelog.com/faqs/what-is-ask-user-question-tool-in-claude-code/)
 - [Output Styles 文档](https://code.claude.com/docs/en/output-styles)
-- [HotPlex Slack 映射文档](../docs/chatapps/engine-events-slack-mapping.md)
+- [HotPlex Slack 映射文档](../docs/chatapps/engine-events-slack-ux-spec.md)
 
 ---
 

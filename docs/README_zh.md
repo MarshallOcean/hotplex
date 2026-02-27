@@ -26,7 +26,7 @@ HotPlex 支持的特定 AI CLI 智能体深度指南。
 
 ## 💬 ChatApps 集成
 - **[ChatApps Guide](chatapps/chatapps-architecture.md)**: Architecture design and user manual for chat platform integration.
-- **[Slack Block 映射](chatapps/engine-events-slack-mapping.md)**: Engine 事件到 Slack Block Kit 映射的最佳实践深度解析。
+- **[Slack Block 映射](chatapps/engine-events-slack-ux-spec.md)**: Engine 事件到 Slack Block Kit 映射的最佳实践深度解析。
 
 ## 🛠️ 开发者迁移
 - *即将推出*

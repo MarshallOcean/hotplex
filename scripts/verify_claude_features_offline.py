@@ -60,7 +60,7 @@ class CodebaseVerifier:
         self.provider_file = self.project_root / "provider" / "claude_provider.go"
         self.event_file = self.project_root / "provider" / "event.go"
         self.mapping_doc = (
-            self.project_root / "docs" / "chatapps" / "engine-events-slack-mapping.md"
+            self.project_root / "docs" / "chatapps" / "engine-events-slack-ux-spec.md"
         )
 
     def read_file(self, path: Path) -> Optional[str]:
@@ -126,7 +126,7 @@ class CodebaseVerifier:
                 missing.append("文档缺少 BuildPlanModeBlock 方法")
                 recommendations.append("在 block_builder.go 中实现 BuildPlanModeBlock")
         else:
-            missing.append("无法读取 engine-events-slack-mapping.md")
+            missing.append("无法读取 engine-events-slack-ux-spec.md")
 
         # 确定状态
         if len(evidence) >= 2:
@@ -202,7 +202,7 @@ class CodebaseVerifier:
                 missing.append("文档缺少回调处理示例")
                 recommendations.append("添加交互式按钮回调处理逻辑")
         else:
-            missing.append("无法读取 engine-events-slack-mapping.md")
+            missing.append("无法读取 engine-events-slack-ux-spec.md")
 
         # 确定状态
         if len(evidence) >= 3:
@@ -267,7 +267,7 @@ class CodebaseVerifier:
                 missing.append("文档缺少输出风格详细说明")
                 recommendations.append("补充 Output Styles 配置和使用说明")
         else:
-            missing.append("无法读取 engine-events-slack-mapping.md")
+            missing.append("无法读取 engine-events-slack-ux-spec.md")
 
         # 确定状态
         if len(evidence) >= 3:
@@ -360,7 +360,7 @@ class CodebaseVerifier:
             else:
                 missing.append("UI 设计不完整")
         else:
-            missing.append("无法读取 engine-events-slack-mapping.md")
+            missing.append("无法读取 engine-events-slack-ux-spec.md")
 
         # 确定状态
         if len(evidence) >= 5:

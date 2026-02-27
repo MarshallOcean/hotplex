@@ -68,8 +68,9 @@ safe_cp "$DOCS_DIR/benchmark-report.md" "$TARGET_ROOT/guide/performance.md"
 safe_cp "$DOCS_DIR/benchmark-report_zh.md" "$TARGET_ROOT/guide/performance_zh.md"
 safe_cp "$DOCS_DIR/chatapps/chatapps-architecture.md" "$TARGET_ROOT/guide/chatapps.md"
 safe_cp "$DOCS_DIR/chatapps/chatapps-slack.md" "$TARGET_ROOT/guide/chatapps-slack.md"
+safe_cp "$DOCS_DIR/chatapps/chatapps-slack-architecture.md" "$TARGET_ROOT/guide/chatapps-slack-architecture.md"
 safe_cp "$DOCS_DIR/chatapps/chatapps-dingtalk-analysis.md" "$TARGET_ROOT/guide/chatapps-dingtalk.md"
-safe_cp "$DOCS_DIR/chatapps/engine-events-slack-mapping.md" "$TARGET_ROOT/guide/slack-block-mapping.md"
+safe_cp "$DOCS_DIR/chatapps/engine-events-slack-ux-spec.md" "$TARGET_ROOT/guide/slack-block-mapping.md"
 
 # --- AI Providers ---
 log_info "Syncing AI provider guides..."
@@ -158,8 +159,10 @@ find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?chatapps-guide(_zh)?(\.md)?\)|](/guide/chatapps.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?chatapps-dingtalk-analysis(_zh)?(\.md)?\)|](/guide/chatapps-dingtalk.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?chatapps-slack(_zh)?(\.md)?\)|](/guide/chatapps-slack.md)|g' {} +
+find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?chatapps-slack-architecture(_zh)?(\.md)?\)|](/guide/chatapps-slack-architecture.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?slack-gap-analysis(_zh)?(\.md)?\)|](/guide/slack-gap-analysis.md)|g' {} +
-find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(chatapps/)?engine-events-slack-mapping(_zh)?(\.md)?\)|](/guide/slack-block-mapping.md)|g' {} +
+find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.\/?(docs\/)?(chatapps\/)?engine-events-slack-ux-spec(_zh)?(\.md)?\)|](./slack-block-mapping.md)|g' {} +
+find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.\/?(docs\/)?(chatapps\/)?engine-events-slack-mapping(_zh)?(\.md)?\)|](./slack-block-mapping.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?(plan/)?technical-plan-draft(_zh)?(\.md)?\)|](/plan/technical-plan.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?chatapps-design(_zh)?(\.md)?\)|](/guide/chatapps.md)|g' {} +
 find "$TARGET_ROOT" -name "*.md" -type f -exec sed -E -i.bak 's|\]\(\.?/?(docs/)?hooks-architecture(_zh)?(\.md)?\)|](/guide/hooks\2.md)|g' {} +

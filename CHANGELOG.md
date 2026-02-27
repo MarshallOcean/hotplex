@@ -38,7 +38,7 @@ This release delivers a production-ready Slack UX experience with real-time feed
 - **Link Checker** - Limit to docs-site and scripts directories only
 
 ### Documentation
-- **Slack UX Spec** - Consolidated research docs into unified spec (`docs/chatapps/engine-events-slack-mapping.md`)
+- **Slack UX Spec** - Consolidated research docs into unified spec (`docs/chatapps/engine-events-slack-ux-spec.md`)
 - **Claude CLI Verification** - Added verification scripts for reset command, plan mode, and ask user features
 
 ### Technical Details
@@ -55,7 +55,7 @@ This release delivers a production-ready Slack UX experience with real-time feed
 - [@hrygo](https://github.com/hrygo)
 
 ### Related
-- **Spec**: [Slack Block Kit Mapping](docs/chatapps/engine-events-slack-mapping.md)
+- **Spec**: [Slack Block Kit Mapping](docs/chatapps/engine-events-slack-ux-spec.md)
 - **Rule**: [ChatApps SDK First](.agent/rules/chatapps-sdk-first.md)
 
 ---
@@ -100,7 +100,7 @@ This release delivers a complete Slack Block Kit implementation for HotPlex Chat
   - Removes Cost/Tools/Files from default view
 
 ### Documentation
-- **Design Specification** - Complete UI/UX design doc (`docs/chatapps/engine-events-slack-mapping.md`)
+- **Design Specification** - Complete UI/UX design doc (`docs/chatapps/engine-events-slack-ux-spec.md`)
   - 8 event types with Block Kit mappings
   - Slack official docs integration
   - Token counting mechanism (Claude Code research)
@@ -129,7 +129,7 @@ This release delivers a complete Slack Block Kit implementation for HotPlex Chat
 
 ### Related
 - **Issue**: [#38](https://github.com/hrygo/hotplex/issues/38) - Engine Events → Slack Block Kit
-- **Documentation**: [Slack Block Kit Mapping](docs/chatapps/engine-events-slack-mapping.md)
+- **Documentation**: [Slack Block Kit Mapping](docs/chatapps/engine-events-slack-ux-spec.md)
 
 ---
 
