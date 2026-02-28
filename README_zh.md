@@ -132,6 +132,7 @@ PORT=8080 ./dist/hotplexd
 
 - **[架构深度解析](docs/architecture_zh.md)**：深入了解内部工作原理、安全协议及会话管理逻辑。
 - **[SDK 开发者手册](docs/sdk-guide_zh.md)**：将 HotPlex 集成到您的 Go 应用程序的完整指南。
+- **[Slack 机器人集成手册](docs/chatapps/chatapps-slack-manual.md)**：手把手教你将 AI 能力接入 Slack 团队工作区。
 
 ---
 

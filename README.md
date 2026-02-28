@@ -132,6 +132,7 @@ PORT=8080 ./dist/hotplexd
 
 - **[Architecture Deep Dive](docs/architecture.md)**: Explore the inner workings, security protocols, and session management logic.
 - **[SDK Developer Guide](docs/sdk-guide.md)**: A comprehensive manual for integrating HotPlex into your Go applications.
+- **[Slack Integration Manual](docs/chatapps/chatapps-slack-manual.md)**: Comprehensive guide for connecting HotPlex to Slack (Chinese).
 - **[Quick Start Guide](docs/quick-start.md)**: Step-by-step tutorial for getting started.
 - **[Observability Guide](docs/observability-guide.md)**: OpenTelemetry and Prometheus integration.
 - **[Docker Deployment](docs/docker-deployment.md)**: Container and Kubernetes deployment.

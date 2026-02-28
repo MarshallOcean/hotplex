@@ -161,4 +161,4 @@ section := slack.NewSectionBlock(
 ## 7. 相关参考
 - [Slack UX 事件渲染对照表 (21 种事件)](./chatapps-architecture.md#6-事件类型映射-event-types)
 - [ChatApps 接入层架构协议](./chatapps-architecture.md)
-- [Slack 机器人集成手册 (快速上手)](./chatapps-slack.md)
+- [Slack 机器人集成手册 (快速上手)](./chatapps-slack-manual.md)
