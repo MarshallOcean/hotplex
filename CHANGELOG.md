@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## [v0.15.1] - 2026-03-01
+
+### ✨ Reliability Hardening & UI Polish
+
+This maintenance release focuses on system reliability, concurrency safety, and a premium visual refresh for the Slack integration.
+
+### Added
+- **Premium Emoji System** - Redesigned tool emojis using guaranteed standard Slack shortcodes (`:keyboard:`, `:floppy_disk:`, `:eyes:`, `:mag:`) for universal compatibility and a professional look.
+- **Initialization Synchronization** - New 500ms buffering logic in `ZoneOrderProcessor` ensures "Starting session" messages always appear at the top during cold starts.
+
+### Fixed
+- **Critical Concurrency Hardening** - 全面审计并加固了 `chatapps` 包下的所有 Mutex 使用，引入 `defer` 模式防止高并发下的锁泄露。
+- **Memory Leak Prevention** - 实现了 `ResetSession` 生命周期钩子，确保会话结束后彻底清理缓冲区与同步状态。
+- **Build & Variable Safety** - 修复了 `dingtalk` 适配器中的变量重声明与作用域问题。
+
+### Changed
+- **Slack UX Polish** - 简化了会话启动消息中的 ID 展示，将工具执行失败图标由 `:x:` 升级为更专业的 `:warning:`。
+
+---
+
 ## [v0.15.0] - 2026-02-28
 
 ### ✨ Support for Plan Mode & Interaction Refinements
