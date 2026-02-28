@@ -116,9 +116,8 @@ type StreamCallback struct {
 	reactionMessageTS string // User's message TS for reactions
 	currentReaction   string // Currently active reaction emoji name
 
-	// Starting message state for 3s delayed deletion
-	startingMsgChannelID string
-	startingMsgTS        string
+	// Starting message records for 3s delayed deletion (session_start + engine_starting)
+	startingMsgRecords []msgRecord
 
 	// Action Zone message records for 3s delayed deletion on Answer
 	actionMsgRecords []msgRecord
@@ -366,22 +365,26 @@ func (c *StreamCallback) setReaction(emoji string) {
 }
 
 // scheduleDeleteStartingMessage schedules a 3-second delayed deletion
-// for the "Starting Session" / "Engine Starting" message.
+// for all startup-phase messages (session_start + engine_starting).
 func (c *StreamCallback) scheduleDeleteStartingMessage() {
-	if c.startingMsgChannelID == "" || c.startingMsgTS == "" {
+	if len(c.startingMsgRecords) == 0 {
 		return
 	}
-	channelID, msgTS := c.startingMsgChannelID, c.startingMsgTS
-	c.startingMsgChannelID, c.startingMsgTS = "", "" // Clear immediately to prevent double-delete
+	records := c.startingMsgRecords
+	c.startingMsgRecords = nil // Clear immediately to prevent double-delete
 
 	time.AfterFunc(3*time.Second, func() {
 		adapter, ok := c.adapters.GetAdapter(c.platform)
 		if !ok {
 			return
 		}
-		if sa, ok := adapter.(*slack.Adapter); ok {
-			if err := sa.DeleteMessageSDK(c.ctx, channelID, msgTS); err != nil {
-				c.logger.Debug("Failed to delete starting message", "error", err)
+		sa, ok := adapter.(*slack.Adapter)
+		if !ok {
+			return
+		}
+		for _, rec := range records {
+			if err := sa.DeleteMessageSDK(context.Background(), rec.ChannelID, rec.MessageTS); err != nil {
+				c.logger.Debug("Failed to delete starting message", "ts", rec.MessageTS, "error", err)
 			}
 		}
 	})
@@ -417,8 +420,9 @@ func (c *StreamCallback) scheduleDeleteActionMessages() {
 		if !ok {
 			return
 		}
+		// Use context.Background() — the original c.ctx is likely cancelled by now
 		for _, rec := range records {
-			if err := sa.DeleteMessageSDK(c.ctx, rec.ChannelID, rec.MessageTS); err != nil {
+			if err := sa.DeleteMessageSDK(context.Background(), rec.ChannelID, rec.MessageTS); err != nil {
 				c.logger.Debug("Failed to delete action message", "ts", rec.MessageTS, "error", err)
 			}
 		}
@@ -523,10 +527,15 @@ func (c *StreamCallback) handleToolUse(data any) error {
 	var inputSummary string
 
 	if m, ok := data.(*event.EventWithMeta); ok {
+		var metaToolName, metaInputSummary string
+		if m.Meta != nil {
+			metaToolName = m.Meta.ToolName
+			metaInputSummary = m.Meta.InputSummary
+		}
 		c.logger.Debug("[TOOL] handleToolUse EventWithMeta",
 			"event_data", m.EventData,
-			"meta_tool_name", m.Meta.ToolName,
-			"meta_input_summary", m.Meta.InputSummary)
+			"meta_tool_name", metaToolName,
+			"meta_input_summary", metaInputSummary)
 		if m.Meta != nil && m.Meta.ToolName != "" {
 			toolName = m.Meta.ToolName
 			inputSummary = m.Meta.InputSummary
@@ -659,7 +668,8 @@ func (c *StreamCallback) handleAnswer(data any) error {
 				return
 			}
 			if sa, ok := adapter.(*slack.Adapter); ok {
-				if err := sa.DeleteMessageSDK(c.ctx, channelID, msgTS); err != nil {
+				// Use context.Background() — the original c.ctx is likely cancelled by now
+				if err := sa.DeleteMessageSDK(context.Background(), channelID, msgTS); err != nil {
 					c.logger.Debug("Failed to delete thinking message (delayed)", "error", err)
 				}
 			}
@@ -668,6 +678,10 @@ func (c *StreamCallback) handleAnswer(data any) error {
 		c.thinkingSent = false
 		c.logger.Debug("Clearing thinking state for answer")
 	}
+
+	// Double-safety: also schedule starting message deletion here
+	// in case no thinking event was received before answer
+	c.scheduleDeleteStartingMessage()
 
 	// Schedule 3-second delayed deletion of Action Zone messages
 	c.scheduleDeleteActionMessages()
@@ -1444,11 +1458,10 @@ func (c *StreamCallback) handleSessionStart(data any) error {
 		return err
 	}
 
-	// Capture starting message TS for 3s delayed deletion
+	// Track starting message for 3s delayed deletion
 	if ts, ok := msg.Metadata["message_ts"].(string); ok && ts != "" {
-		c.startingMsgTS = ts
-		if ch, ok := msg.Metadata["channel_id"].(string); ok {
-			c.startingMsgChannelID = ch
+		if ch, ok := msg.Metadata["channel_id"].(string); ok && ch != "" {
+			c.startingMsgRecords = append(c.startingMsgRecords, msgRecord{ChannelID: ch, MessageTS: ts})
 		}
 	}
 
@@ -1477,7 +1490,18 @@ func (c *StreamCallback) handleEngineStarting(data any) error {
 		},
 	}
 	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(convertToChatMessage(msg))
+	if err := c.sendMessageAndGetTS(convertToChatMessage(msg)); err != nil {
+		return err
+	}
+
+	// Track engine_starting message for 3s delayed deletion
+	if ts, ok := msg.Metadata["message_ts"].(string); ok && ts != "" {
+		if ch, ok := msg.Metadata["channel_id"].(string); ok && ch != "" {
+			c.startingMsgRecords = append(c.startingMsgRecords, msgRecord{ChannelID: ch, MessageTS: ts})
+		}
+	}
+
+	return nil
 }
 
 // handleUserMessageReceived handles user message received acknowledgment

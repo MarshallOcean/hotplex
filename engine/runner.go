@@ -415,8 +415,8 @@ func (r *Engine) handleStreamRawLine(line string, cfg *types.Config, stats *Sess
 			closeDoneChan(doneChan)
 		}
 
-		if pevt.Type == provider.EventTypeSystem {
-			continue // Skip system events but continue with others in the same line
+		if pevt.Type == provider.EventTypeSystem || pevt.Type == provider.EventTypeRaw {
+			continue // Skip system/raw events but continue with others in the same line
 		}
 
 		if callback != nil {

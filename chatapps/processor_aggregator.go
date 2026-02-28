@@ -321,9 +321,11 @@ func (p *MessageAggregatorProcessor) bufferMessage(_ context.Context, msg *base.
 		}
 
 		// Record eviction metrics
-		evictedEventType, _ := evicted.Metadata["event_type"].(string)
-		if evictedEventType == "" {
-			evictedEventType = "unknown"
+		evictedEventType := "unknown"
+		if evicted.Metadata != nil {
+			if et, ok := evicted.Metadata["event_type"].(string); ok && et != "" {
+				evictedEventType = et
+			}
 		}
 		MessagesDroppedTotal.WithLabelValues(evictedEventType, msg.Platform, "sliding_window").Inc()
 
@@ -344,9 +346,11 @@ func (p *MessageAggregatorProcessor) bufferMessage(_ context.Context, msg *base.
 				buf.totalBytes = 0
 			}
 
-			evictedEventType, _ := evicted.Metadata["event_type"].(string)
-			if evictedEventType == "" {
-				evictedEventType = "unknown"
+			evictedEventType := "unknown"
+			if evicted.Metadata != nil {
+				if et, ok := evicted.Metadata["event_type"].(string); ok && et != "" {
+					evictedEventType = et
+				}
 			}
 			MessagesDroppedTotal.WithLabelValues(evictedEventType, msg.Platform, "sliding_window_bytes").Inc()
 		}
