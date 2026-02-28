@@ -958,7 +958,7 @@ func (b *MessageBuilder) BuildSessionStartMessage(msg *base.ChatMessage) []slack
 	// Per spec: context block with session ID
 	var contextElems []slack.MixedElement
 	if sessionID != "" {
-		sessionText := slack.NewTextBlockObject("mrkdwn", "Session: `"+sessionID+"`", false, false)
+		sessionText := slack.NewTextBlockObject("mrkdwn", "`"+sessionID+"`", false, false)
 		contextElems = append(contextElems, sessionText)
 	}
 
