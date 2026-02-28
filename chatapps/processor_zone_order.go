@@ -58,8 +58,7 @@ type ZoneOrderProcessor struct {
 }
 
 type zoneState struct {
-	highestZone int  // Highest zone index seen so far
-	anchorSet   bool // Whether Zone 0 anchor (first thinking msg) has been recorded
+	highestZone int // Highest zone index seen so far
 }
 
 // NewZoneOrderProcessor creates a new ZoneOrderProcessor.
@@ -114,17 +113,10 @@ func (p *ZoneOrderProcessor) Process(_ context.Context, msg *base.ChatMessage) (
 		state.highestZone = zone
 	}
 
-	// Track Index 0 anchor for Thinking Zone.
-	if zone == ZoneThinking && !state.anchorSet {
-		state.anchorSet = true
-		msg.Metadata["zone_anchor"] = true // Mark as anchor – should never be evicted.
-	}
-
 	// Auto-reset on Turn boundary: session_stats marks end of a Turn.
 	// Reset AFTER processing this event so the next Turn starts clean.
 	if eventType == "session_stats" {
 		state.highestZone = -1
-		state.anchorSet = false
 	}
 
 	p.mu.Unlock()

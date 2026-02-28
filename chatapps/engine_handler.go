@@ -392,7 +392,7 @@ func (c *StreamCallback) scheduleDeleteStartingMessage() {
 
 // maxActionMessages is the maximum number of action zone messages visible in Slack.
 // When exceeded, oldest messages are deleted immediately (sliding window effect).
-const maxActionMessages = 3
+const maxActionMessages = 5
 
 // trackActionMessage records an action zone message and enforces sliding window.
 // When the number of tracked messages exceeds maxActionMessages, the oldest
