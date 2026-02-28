@@ -186,86 +186,108 @@ func (p *OpenCodeProvider) BuildInputMessage(prompt string, taskInstructions str
 	}, nil
 }
 
-// ParseEvent parses an OpenCode JSON output line into a ProviderEvent.
-func (p *OpenCodeProvider) ParseEvent(line string) (*ProviderEvent, error) {
+// ParseEvent parses an OpenCode JSON output line into one or more ProviderEvents.
+func (p *OpenCodeProvider) ParseEvent(line string) ([]*ProviderEvent, error) {
 	var msg OpenCodeMessage
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		// Not valid JSON, return as raw content
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeRaw,
 			RawType: "raw",
 			Content: line,
 			RawLine: line,
-		}, nil
+		}}, nil
 	}
 
 	// If message has a global error
 	if msg.Error != "" {
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeError,
 			Content: msg.Error,
 			RawLine: line,
-		}, nil
+		}}, nil
 	}
 
-	// Process parts - OpenCode outputs multiple parts per message
-	// We return the first significant part as the event
+	var events []*ProviderEvent
+
+	// Process all parts - OpenCode outputs multiple parts per message
 	for _, part := range msg.Parts {
-		event := p.parsePart(part, line)
-		if event != nil {
-			return event, nil
+		pEvents := p.parsePart(part, line)
+		if len(pEvents) > 0 {
+			events = append(events, pEvents...)
 		}
 	}
 
-	// Fallback: use content field
-	if msg.Content != "" {
-		return &ProviderEvent{
+	// If no events found in parts, fallback to content field
+	if len(events) == 0 && msg.Content != "" {
+		events = append(events, &ProviderEvent{
 			Type:    EventTypeAnswer,
 			RawType: "content",
 			Content: msg.Content,
 			Status:  msg.Status,
 			RawLine: line,
-		}, nil
+		})
 	}
 
-	// Empty or system message
-	return &ProviderEvent{
-		Type:    EventTypeSystem,
-		RawType: "empty",
-		RawLine: line,
-	}, nil
+	// If still no events, return system message
+	if len(events) == 0 {
+		events = append(events, &ProviderEvent{
+			Type:    EventTypeSystem,
+			RawType: "empty",
+			RawLine: line,
+		})
+	}
+
+	return events, nil
 }
 
-// parsePart converts an OpenCode Part to a ProviderEvent.
-func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) *ProviderEvent {
+// parsePart converts an OpenCode Part to one or more ProviderEvents.
+func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) []*ProviderEvent {
 	switch part.Type {
 	case OpenCodePartText:
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeAnswer,
 			RawType: part.Type,
 			Content: part.Text,
 			Status:  part.Status,
 			RawLine: rawLine,
-		}
+		}}
 
 	case OpenCodePartReasoning:
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeThinking,
 			RawType: part.Type,
 			Content: part.Text,
 			Status:  "running",
 			RawLine: rawLine,
-		}
+		}}
 
 	case OpenCodePartTool:
-		// Tool can be tool_use or tool_result depending on context
-		if part.Output != "" || part.Content != "" {
-			// This is a tool result
+		var events []*ProviderEvent
+
+		// Split tool info if both input and output are present
+		// This is CRITICAL for Engine to track tool_use -> tool_result lifecycle
+		hasInput := len(part.Input) > 0 || part.ID != ""
+		hasOutput := part.Output != "" || part.Content != ""
+
+		if hasInput {
+			events = append(events, &ProviderEvent{
+				Type:      EventTypeToolUse,
+				RawType:   part.Type,
+				ToolName:  part.Name,
+				ToolID:    part.ID,
+				ToolInput: part.Input,
+				Status:    "running",
+				RawLine:   rawLine,
+			})
+		}
+
+		if hasOutput {
 			status := "success"
 			if part.Error != "" || part.Status == "error" {
 				status = "error"
 			}
-			return &ProviderEvent{
+			events = append(events, &ProviderEvent{
 				Type:     EventTypeToolResult,
 				RawType:  part.Type,
 				ToolName: part.Name,
@@ -275,21 +297,13 @@ func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) *Provide
 				Error:    part.Error,
 				IsError:  part.Error != "",
 				RawLine:  rawLine,
-			}
-		}
-		// This is a tool use
-		return &ProviderEvent{
-			Type:      EventTypeToolUse,
-			RawType:   part.Type,
-			ToolName:  part.Name,
-			ToolID:    part.ID,
-			ToolInput: part.Input,
-			Status:    "running",
-			RawLine:   rawLine,
+			})
 		}
 
+		return events
+
 	case OpenCodePartStepStart:
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeStepStart,
 			RawType: part.Type,
 			Status:  "running",
@@ -298,10 +312,10 @@ func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) *Provide
 				TotalSteps:  int32(part.TotalSteps),
 			},
 			RawLine: rawLine,
-		}
+		}}
 
 	case OpenCodePartStepFinish:
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeStepFinish,
 			RawType: part.Type,
 			Status:  "success",
@@ -310,7 +324,7 @@ func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) *Provide
 				TotalSteps:  int32(part.TotalSteps),
 			},
 			RawLine: rawLine,
-		}
+		}}
 
 	default:
 		// Unknown part type, try to extract text
@@ -319,12 +333,12 @@ func (p *OpenCodeProvider) parsePart(part OpenCodePart, rawLine string) *Provide
 			text = part.Content
 		}
 		if text != "" {
-			return &ProviderEvent{
+			return []*ProviderEvent{{
 				Type:    EventTypeAnswer,
 				RawType: part.Type,
 				Content: text,
 				RawLine: rawLine,
-			}
+			}}
 		}
 		return nil
 	}

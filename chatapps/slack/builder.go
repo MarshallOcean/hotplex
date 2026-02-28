@@ -2,7 +2,6 @@ package slack
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -10,28 +9,6 @@ import (
 	"github.com/hrygo/hotplex/provider"
 	"github.com/slack-go/slack"
 )
-
-// controlCharRegex matches control characters that can break Slack blocks
-var controlCharRegex = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
-
-// sanitizeCodeContent cleans content for safe display in Slack code blocks
-// - Removes control characters that can break blocks
-// - Handles triple backticks by replacing with single backticks
-// - Ensures content fits within Slack limits
-func sanitizeCodeContent(content string, maxLen int) string {
-	// Remove control characters
-	content = controlCharRegex.ReplaceAllString(content, "")
-
-	// Replace triple backticks with single backticks to avoid breaking the code block
-	content = strings.ReplaceAll(content, "```", "`")
-
-	// Truncate if needed, leaving room for code block markers and truncation notice
-	if maxLen > 0 && len(content) > maxLen {
-		content = content[:maxLen] + "\n... (truncated)"
-	}
-
-	return content
-}
 
 // MessageBuilder builds Slack-specific messages from platform-agnostic ChatMessage
 type MessageBuilder struct {
@@ -101,30 +78,23 @@ func (b *MessageBuilder) Build(msg *base.ChatMessage) []slack.Block {
 // =============================================================================
 
 // BuildThinkingMessage builds a status indicator for thinking state
-// Implements EventTypeThinking per spec - shows :brain: header + content preview in quote format
+// Implements EventTypeThinking per spec - uses context block for low visual weight
 func (b *MessageBuilder) BuildThinkingMessage(msg *base.ChatMessage) []slack.Block {
 	content := msg.Content
 	if content == "" {
 		content = "Thinking..."
 	}
 
-	var blocks []slack.Block
-
-	// Header with emoji
-	headerText := slack.NewTextBlockObject("mrkdwn", ":brain: *Thinking*", false, false)
-	blocks = append(blocks, slack.NewSectionBlock(headerText, nil, nil))
-
-	// Content preview in quote format (truncate if too long)
+	// Truncate if too long
 	if len(content) > 300 {
 		content = content[:297] + "..."
 	}
 
-	// Use quote format for content preview
-	quoteText := ">" + strings.ReplaceAll(content, "\n", "\n>")
-	quoteBlock := slack.NewTextBlockObject("mrkdwn", quoteText, false, false)
-	blocks = append(blocks, slack.NewSectionBlock(quoteBlock, nil, nil))
-
-	return blocks
+	// Per spec: context block with :brain: emoji and italic text
+	text := slack.NewTextBlockObject("mrkdwn", ":brain: _"+content+"_", false, false)
+	return []slack.Block{
+		slack.NewContextBlock("", text),
+	}
 }
 
 // =============================================================================
@@ -133,7 +103,27 @@ func (b *MessageBuilder) BuildThinkingMessage(msg *base.ChatMessage) []slack.Blo
 
 // BuildToolUseMessage builds a message for tool invocation
 // Implements EventTypeToolUse per spec - uses fields dual-column layout, parameter summary 12 chars
+// Supports aggregated messages: if metadata contains "_original_messages", builds blocks for each.
 func (b *MessageBuilder) BuildToolUseMessage(msg *base.ChatMessage) []slack.Block {
+	// Handle aggregated messages for batch display
+	if msg.Metadata != nil {
+		if rawMsgs, ok := msg.Metadata["_original_messages"]; ok {
+			if messages, ok := rawMsgs.([]*base.ChatMessage); ok && len(messages) > 1 {
+				var allBlocks []slack.Block
+				for _, subMsg := range messages {
+					allBlocks = append(allBlocks, b.buildSingleToolUseBlock(subMsg)...)
+				}
+				return allBlocks
+			}
+		}
+	}
+
+	// Single message case
+	return b.buildSingleToolUseBlock(msg)
+}
+
+// buildSingleToolUseBlock is the internal logic for a single tool use section
+func (b *MessageBuilder) buildSingleToolUseBlock(msg *base.ChatMessage) []slack.Block {
 	toolName := msg.Content
 	if toolName == "" {
 		toolName = "Unknown Tool"
@@ -159,26 +149,14 @@ func (b *MessageBuilder) BuildToolUseMessage(msg *base.ChatMessage) []slack.Bloc
 		inputSummary = inputSummary[:12] + "..."
 	}
 
-	// Use fields dual-column layout per spec
-	toolNameText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*%s*", toolName), false, false)
+	// Per spec: fields dual-column layout with emoji + tool name + parameter summary
+	// Format: :computer: *Bash* | ls -la...
+	toolNameText := slack.NewTextBlockObject("mrkdwn", toolEmoji+" *"+toolName+"*", false, false)
 	inputText := slack.NewTextBlockObject("mrkdwn", "```"+inputSummary+"```", false, false)
 
 	section := slack.NewSectionBlock(nil, []*slack.TextBlockObject{toolNameText, inputText}, nil)
 
-	// Add detail section with full input if available
-	var blocks []slack.Block
-	blocks = append(blocks, section)
-
-	if input != "" && len(input) > 12 {
-		detailText := fmt.Sprintf("%s %s", toolEmoji, "*Using tool:* `"+toolName+"`")
-		// Sanitize input for code block display
-		safeInput := sanitizeCodeContent(input, 200)
-		detailText += fmt.Sprintf("\n```\n%s\n```", safeInput)
-		mrkdwn := slack.NewTextBlockObject("mrkdwn", detailText, false, false)
-		blocks = append(blocks, slack.NewSectionBlock(mrkdwn, nil, nil))
-	}
-
-	return blocks
+	return []slack.Block{section}
 }
 
 // getToolEmoji returns the appropriate emoji for a tool type per spec
@@ -212,7 +190,27 @@ func getToolEmoji(toolName string) string {
 
 // BuildToolResultMessage builds a message for tool execution result
 // Implements EventTypeToolResult per spec - shows status, duration, and data length
+// Supports aggregated messages: if metadata contains "_original_messages", builds blocks for each.
 func (b *MessageBuilder) BuildToolResultMessage(msg *base.ChatMessage) []slack.Block {
+	// Handle aggregated messages for batch display
+	if msg.Metadata != nil {
+		if rawMsgs, ok := msg.Metadata["_original_messages"]; ok {
+			if messages, ok := rawMsgs.([]*base.ChatMessage); ok && len(messages) > 1 {
+				var allBlocks []slack.Block
+				for _, subMsg := range messages {
+					allBlocks = append(allBlocks, b.buildSingleToolResultBlock(subMsg)...)
+				}
+				return allBlocks
+			}
+		}
+	}
+
+	// Single message case
+	return b.buildSingleToolResultBlock(msg)
+}
+
+// buildSingleToolResultBlock is the internal logic for a single tool result line
+func (b *MessageBuilder) buildSingleToolResultBlock(msg *base.ChatMessage) []slack.Block {
 	var blocks []slack.Block
 
 	// Check metadata for success status
@@ -229,14 +227,24 @@ func (b *MessageBuilder) BuildToolResultMessage(msg *base.ChatMessage) []slack.B
 	if msg.Metadata != nil {
 		if d, ok := msg.Metadata["duration_ms"].(int64); ok {
 			durationMs = d
+		} else if d, ok := msg.Metadata["duration_ms"].(float64); ok {
+			durationMs = int64(d)
 		}
 		if tn, ok := msg.Metadata["tool_name"].(string); ok {
 			toolName = tn
 		}
 	}
 
-	// Get data length from content
-	dataLen := len(msg.Content)
+	// Get data length from content or metadata preference
+	dataLen := int64(len(msg.Content))
+	if msg.Metadata != nil {
+		if dl, ok := msg.Metadata["content_length"].(int64); ok {
+			dataLen = dl
+		} else if dl, ok := msg.Metadata["content_length"].(float64); ok {
+			dataLen = int64(dl)
+		}
+	}
+
 	var dataLenStr string
 	if dataLen > 1024*1024 {
 		dataLenStr = fmt.Sprintf("%.1fMB", float64(dataLen)/(1024*1024))
@@ -273,17 +281,6 @@ func (b *MessageBuilder) BuildToolResultMessage(msg *base.ChatMessage) []slack.B
 
 	statusObj := slack.NewTextBlockObject("mrkdwn", statusText, false, false)
 	blocks = append(blocks, slack.NewSectionBlock(statusObj, nil, nil))
-
-	// Add content if not empty
-	content := msg.Content
-	if content != "" {
-		// Sanitize content: remove control chars, handle backticks, truncate
-		// Max length 2900 to leave room for code block markers
-		content = sanitizeCodeContent(content, 2900)
-		// Format as code block
-		codeText := slack.NewTextBlockObject("mrkdwn", "```\n"+content+"\n```", false, false)
-		blocks = append(blocks, slack.NewSectionBlock(codeText, nil, nil))
-	}
 
 	return blocks
 }
@@ -448,11 +445,11 @@ func (b *MessageBuilder) BuildExitPlanModeMessage(msg *base.ChatMessage) []slack
 	}
 
 	approveBtn := slack.NewButtonBlockElement("plan_approve", approveValue,
-		slack.NewTextBlockObject("plain_text", "Approve", false, true))
+		slack.NewTextBlockObject("plain_text", "Approve", false, false))
 	approveBtn.Style = "primary"
 
 	denyBtn := slack.NewButtonBlockElement("plan_deny", denyValue,
-		slack.NewTextBlockObject("plain_text", "Deny", false, true))
+		slack.NewTextBlockObject("plain_text", "Deny", false, false))
 	denyBtn.Style = "danger"
 
 	actionBlock := slack.NewActionBlock("plan_actions", approveBtn, denyBtn)
@@ -546,11 +543,11 @@ func (b *MessageBuilder) BuildDangerBlockMessage(msg *base.ChatMessage) []slack.
 	}
 
 	confirmBtn := slack.NewButtonBlockElement("danger_confirm", confirmValue,
-		slack.NewTextBlockObject("plain_text", "Confirm", false, true))
+		slack.NewTextBlockObject("plain_text", "Confirm", false, false))
 	confirmBtn.Style = "danger"
 
 	cancelBtn := slack.NewButtonBlockElement("danger_cancel", cancelValue,
-		slack.NewTextBlockObject("plain_text", "Cancel", false, true))
+		slack.NewTextBlockObject("plain_text", "Cancel", false, false))
 
 	actionBlock := slack.NewActionBlock("danger_actions", confirmBtn, cancelBtn)
 
@@ -572,33 +569,33 @@ func (b *MessageBuilder) BuildDangerBlockMessage(msg *base.ChatMessage) []slack.
 func (b *MessageBuilder) BuildSessionStatsMessage(msg *base.ChatMessage) []slack.Block {
 	var blocks []slack.Block
 
-	// Header: ✅ Done
-	headerText := slack.NewTextBlockObject("mrkdwn", ":white_check_mark: *Done*", false, false)
+	// Header: ✅ Turn Complete (per spec 6)
+	headerText := slack.NewTextBlockObject("mrkdwn", ":white_check_mark: *Turn Complete*", false, false)
 	blocks = append(blocks, slack.NewSectionBlock(headerText, nil, nil))
 
-	// Build compact stats line: ⏱️ duration • 🪙 tokens in/out • 📝 files • 🔧 tools
+	// Build compact stats line: ⏱️ duration • ⚡ tokens in/out • 📝 files • 🔧 tools
 	if msg.Metadata != nil {
 		var stats []string
 
-		// Duration
-		if duration, ok := msg.Metadata["duration_ms"].(int64); ok && duration > 0 {
+		// Total Duration (from total_duration_ms in SessionStats.ToSummary)
+		if duration := extractInt64(msg.Metadata, "total_duration_ms"); duration > 0 {
 			stats = append(stats, "⏱️ "+FormatDuration(duration))
 		}
 
-		// Tokens (show in/out separately)
-		tokensIn, hasIn := msg.Metadata["tokens_in"].(int64)
-		tokensOut, hasOut := msg.Metadata["tokens_out"].(int64)
-		if hasIn || hasOut {
+		// Tokens (show in/out separately) - using input_tokens/output_tokens from SessionStats.ToSummary
+		tokensIn := extractInt64(msg.Metadata, "input_tokens")
+		tokensOut := extractInt64(msg.Metadata, "output_tokens")
+		if tokensIn > 0 || tokensOut > 0 {
 			stats = append(stats, fmt.Sprintf("⚡ %s/%s", formatTokenCount(tokensIn), formatTokenCount(tokensOut)))
 		}
 
 		// Files modified
-		if files, ok := msg.Metadata["files_modified"].(int64); ok && files > 0 {
+		if files := extractInt64(msg.Metadata, "files_modified"); files > 0 {
 			stats = append(stats, fmt.Sprintf("📝 %d files", files))
 		}
 
-		// Tool calls
-		if tools, ok := msg.Metadata["tool_count"].(int64); ok && tools > 0 {
+		// Tool calls (from tool_call_count in SessionStats.ToSummary)
+		if tools := extractInt64(msg.Metadata, "tool_call_count"); tools > 0 {
 			stats = append(stats, fmt.Sprintf("🔧 %d tools", tools))
 		}
 
@@ -608,7 +605,25 @@ func (b *MessageBuilder) BuildSessionStatsMessage(msg *base.ChatMessage) []slack
 		}
 	}
 
+	// Always return at least 2 blocks to avoid "no_text" error
+	// If no stats available, add a simple context block
+	if len(blocks) < 2 {
+		contextText := slack.NewTextBlockObject("mrkdwn", "Session completed", false, false)
+		blocks = append(blocks, slack.NewContextBlock("", contextText))
+	}
+
 	return blocks
+}
+
+// extractInt64 extracts int64 value from metadata, supporting both int32 and int64 types
+func extractInt64(metadata map[string]any, key string) int64 {
+	if v, ok := metadata[key].(int64); ok {
+		return v
+	}
+	if v, ok := metadata[key].(int32); ok {
+		return int64(v)
+	}
+	return 0
 }
 
 // formatTokenCount formats token count in compact form (1.2K)
@@ -667,14 +682,14 @@ func (b *MessageBuilder) BuildCommandProgressMessage(msg *base.ChatMessage) []sl
 			// Per spec: context block with progress indicator
 			progressText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Progress: %d steps", len(steps)), false, false)
 			blocks = append(blocks, slack.NewContextBlock("", progressText))
-
-			// Add cancel button per spec
-			cancelBtn := slack.NewButtonBlockElement("cmd_cancel", "cancel",
-				slack.NewTextBlockObject("plain_text", "Cancel", false, true))
-			actionBlock := slack.NewActionBlock("cmd_actions", cancelBtn)
-			blocks = append(blocks, actionBlock)
 		}
 	}
+
+	// Per spec: always add cancel button (actions block)
+	cancelBtn := slack.NewButtonBlockElement("cmd_cancel", "cancel",
+		slack.NewTextBlockObject("plain_text", "Cancel", false, false))
+	actionBlock := slack.NewActionBlock("cmd_actions", cancelBtn)
+	blocks = append(blocks, actionBlock)
 
 	return blocks
 }
@@ -1051,7 +1066,7 @@ func (b *MessageBuilder) BuildPermissionRequestMessageFromChat(msg *base.ChatMes
 	var blocks []slack.Block
 
 	// Header - per spec: header block
-	headerText := slack.NewTextBlockObject("plain_text", ":warning: Permission Request", true, false)
+	headerText := slack.NewTextBlockObject("plain_text", ":warning: Permission Request", false, false)
 	blocks = append(blocks, slack.NewHeaderBlock(headerText))
 
 	// Tool information - per spec: section
@@ -1091,11 +1106,11 @@ func (b *MessageBuilder) BuildPermissionRequestMessageFromChat(msg *base.ChatMes
 	denyActionID := fmt.Sprintf("perm_deny:%s:%s", sessionID, messageID)
 
 	approveBtn := slack.NewButtonBlockElement(approveActionID, "allow",
-		slack.NewTextBlockObject("plain_text", "✅ Allow", true, false))
+		slack.NewTextBlockObject("plain_text", "✅ Allow", false, false))
 	approveBtn.Style = "primary"
 
 	denyBtn := slack.NewButtonBlockElement(denyActionID, "deny",
-		slack.NewTextBlockObject("plain_text", "🚫 Deny", true, false))
+		slack.NewTextBlockObject("plain_text", "🚫 Deny", false, false))
 	denyBtn.Style = "danger"
 
 	blocks = append(blocks, slack.NewActionBlock(blockID, approveBtn, denyBtn))

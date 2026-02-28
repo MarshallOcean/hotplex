@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,9 +39,36 @@ func main() {
 		}
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
-	}))
+	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
+	var handler slog.Handler
+	logOpts := &slog.HandlerOptions{
+		Level:     logLevel,
+		AddSource: true, // Enable file:line for better error localization
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Customize source path format to be more concise
+			if a.Key == slog.SourceKey {
+				if source, ok := a.Value.Any().(*slog.Source); ok {
+					file := source.File
+					// 1. Strip the module prefix
+					file = strings.TrimPrefix(file, "github.com/hrygo/hotplex/")
+					// 2. Strip leading ./ if any
+					file = strings.TrimPrefix(file, "./")
+
+					return slog.String("source", fmt.Sprintf("%s:%d", file, source.Line))
+				}
+			}
+			return a
+		},
+	}
+
+	if logFormat == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, logOpts)
+	} else {
+		// Default to Text logs for better readability during local development
+		handler = slog.NewTextHandler(os.Stdout, logOpts)
+	}
+
+	logger := slog.New(handler)
 
 	logger.Info("Starting HotPlex Proxy Server...", "log_level", logLevel)
 

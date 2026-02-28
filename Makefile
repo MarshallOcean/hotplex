@@ -12,13 +12,16 @@ NC            := \033[0m
 
 # Metadata
 BINARY_NAME   := hotplexd
-CMD_PATH      := ./cmd/hotplexd/main.go
+CMD_PATH      := ./cmd/hotplexd
 DIST_DIR      := ./dist
 VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-LDFLAGS       := -s -w -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT)' -X 'main.BuildTime=$(BUILD_TIME)'
+LDFLAGS       := -X 'main.Version=$(VERSION)' -X 'main.Commit=$(COMMIT)' -X 'main.BuildTime=$(BUILD_TIME)'
+
+LOG_DIR       := .logs
+LOG_FILE      := $(LOG_DIR)/daemon.log
 
 .PHONY: all help build build-all fmt vet test test-unit test-race test-integration test-all lint tidy clean install-hooks run stop restart docs svg2png
 
@@ -49,17 +52,17 @@ help: ## Show this help message
 build: fmt vet tidy ## Compile the hotplexd daemon
 	@printf "${GREEN}🚀 Building HotPlex Daemon (${VERSION})...${NC}\n"
 	@mkdir -p $(DIST_DIR)
-	@go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME) $(CMD_PATH)
+	@go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME) $(CMD_PATH)
 	@printf "${GREEN}✅ Build complete: ${DIST_DIR}/$(BINARY_NAME)${NC}\n"
 
 build-all: fmt vet tidy ## Compile for all major platforms (Linux, macOS, Windows)
 	@printf "${GREEN}🚀 Building HotPlex Daemon for all platforms (${VERSION})...${NC}\n"
 	@mkdir -p $(DIST_DIR)
-	@GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_PATH)
-	@GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_PATH)
-	@GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_PATH)
-	@GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_PATH)
-	@GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_PATH)
+	@GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_PATH)
+	@GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_PATH)
+	@GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_PATH)
+	@GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_PATH)
+	@GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_PATH)
 	@printf "${GREEN}✅ Cross-compilation complete in ${DIST_DIR}/${NC}\n"
 
 fmt: ## Format Go code
@@ -133,6 +136,10 @@ stop: ## Stop the running hotplexd daemon
 		printf "${YELLOW}⚠️  No running daemon found${NC}\n"; \
 	fi
 
-restart: stop run ## Restart the daemon (stop + run)
-	@printf "${PURPLE}🔥 Starting HotPlex Daemon...${NC}\n"
-	@./$(DIST_DIR)/$(BINARY_NAME)
+restart: stop build ## Restart the daemon and log to $(LOG_FILE)
+	@mkdir -p $(LOG_DIR)
+	@printf "${PURPLE}🔥 Starting HotPlex Daemon (logs: $(LOG_FILE))...${NC}\n"
+	@nohup ./$(DIST_DIR)/$(BINARY_NAME) > $(LOG_FILE) 2>&1 &
+	@printf "${GREEN}✅ Daemon started in background with PID: $$(pgrep -f $(BINARY_NAME))${NC}\n"
+	@printf "${CYAN}📋 Tailing logs (Ctrl+C to stop tailing, daemon will keep running):${NC}\n"
+	@tail -f $(LOG_FILE)

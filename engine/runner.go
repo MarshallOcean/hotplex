@@ -232,33 +232,32 @@ func (r *Engine) executeWithMultiplex(
 	if callback != nil {
 		callbackSafe := event.WrapSafe(r.logger, callback)
 
-		// Send user_message_received to acknowledge receipt immediately
-		if callbackSafe != nil {
-			_ = callbackSafe("user_message_received", event.NewEventWithMeta(
-				"user_message_received",
-				"Message received",
-				&event.EventMeta{Status: "received"},
-			))
-		}
-
 		// Send session_start event on Cold Start (new session creation)
 		if created && callbackSafe != nil {
-			r.logger.Debug("Engine: sending session_start event for cold start",
+			r.logger.Info("Engine: sending session_start event for cold start",
 				"namespace", r.opts.Namespace,
 				"session_id", cfg.SessionID)
 
-			_ = callbackSafe("session_start", event.NewEventWithMeta(
+			if err := callbackSafe("session_start", event.NewEventWithMeta(
 				"session_start",
 				"Starting new session...",
 				&event.EventMeta{Status: "starting"},
-			))
+			)); err != nil {
+				r.logger.Error("Failed to send session_start event", "error", err)
+			}
 
 			// Send engine_starting event to indicate CLI is being initialized
-			_ = callbackSafe("engine_starting", event.NewEventWithMeta(
+			if err := callbackSafe("engine_starting", event.NewEventWithMeta(
 				"engine_starting",
 				"Initializing AI engine...",
 				&event.EventMeta{Status: "initializing"},
-			))
+			)); err != nil {
+				r.logger.Error("Failed to send engine_starting event", "error", err)
+			}
+		} else {
+			r.logger.Debug("Skipping session_start/engine_starting events",
+				"created", created,
+				"callbackSafe", callbackSafe != nil)
 		}
 	}
 
@@ -388,8 +387,8 @@ func (r *Engine) createEventBridge(cfg *types.Config, callback event.Callback, s
 }
 
 func (r *Engine) handleStreamRawLine(line string, cfg *types.Config, stats *SessionStats, callback event.Callback, doneChan chan struct{}) error {
-	// Use Provider to parse the raw line into a normalized ProviderEvent
-	pevt, err := r.provider.ParseEvent(line)
+	// Use Provider to parse the raw line into normalized ProviderEvents
+	pevtSlice, err := r.provider.ParseEvent(line)
 	if err != nil {
 		r.logger.Warn("Engine: provider failed to parse event", "error", err, "line", line)
 		// Fallback: send as raw answer if parsing fails
@@ -399,23 +398,27 @@ func (r *Engine) handleStreamRawLine(line string, cfg *types.Config, stats *Sess
 		return nil
 	}
 
-	// Detect if this event indicates the turn is over
-	if r.provider.DetectTurnEnd(pevt) {
-		r.handleNormalizedResult(pevt, stats, cfg, callback)
-		closeDoneChan(doneChan)
-		return nil
-	}
+	for _, pevt := range pevtSlice {
+		// Detect if this event indicates the turn is over
+		if r.provider.DetectTurnEnd(pevt) {
+			r.handleNormalizedResult(pevt, stats, cfg, callback)
+			closeDoneChan(doneChan)
+			return nil
+		}
 
-	if pevt.Type == provider.EventTypeError {
-		closeDoneChan(doneChan)
-	}
+		if pevt.Type == provider.EventTypeError {
+			closeDoneChan(doneChan)
+		}
 
-	if pevt.Type == provider.EventTypeSystem {
-		return nil
-	}
+		if pevt.Type == provider.EventTypeSystem {
+			continue // Skip system events but continue with others in the same line
+		}
 
-	if callback != nil {
-		return r.dispatchNormalizedCallback(pevt, callback, stats)
+		if callback != nil {
+			if err := r.dispatchNormalizedCallback(pevt, callback, stats); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -542,21 +545,27 @@ func (r *Engine) dispatchNormalizedCallback(pevt *provider.ProviderEvent, callba
 		return callback("tool_use", event.NewEventWithMeta("tool_use", pevt.ToolName, meta))
 
 	case provider.EventTypeToolResult:
-		// Get tool name from stats before RecordToolResult resets it
-		// This handles the case where Claude CLI doesn't include tool_name in tool_result
-		statsToolName := stats.GetCurrentToolName()
-		statsToolID := stats.GetCurrentToolID()
-		dur := stats.RecordToolResult()
+		// Get tool ID for reliable tool name lookup
+		toolID := pevt.ToolID
+		if toolID == "" {
+			toolID = stats.GetCurrentToolID()
+		}
+
+		// RecordToolResult now returns both duration and toolName
+		// It uses toolID map for reliable lookup when tool_result doesn't include tool_name
+		dur, statsToolName := stats.RecordToolResult(toolID)
 
 		// Use provider's tool_name if available, otherwise fallback to stats
 		toolName := pevt.ToolName
 		if toolName == "" {
 			toolName = statsToolName
 		}
-		toolID := pevt.ToolID
-		if toolID == "" {
-			toolID = statsToolID
+
+		// Final fallback: try to get tool name from toolID map
+		if toolName == "" && toolID != "" {
+			toolName = stats.GetToolNameByToolID(toolID)
 		}
+
 		// Default status to "success" if not set
 		status := pevt.Status
 		if status == "" {
@@ -567,6 +576,7 @@ func (r *Engine) dispatchNormalizedCallback(pevt *provider.ProviderEvent, callba
 			"tool_name", toolName,
 			"stats_tool_name", statsToolName,
 			"provider_tool_name", pevt.ToolName,
+			"tool_id", toolID,
 			"status", status,
 			"duration_ms", dur)
 

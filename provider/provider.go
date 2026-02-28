@@ -44,10 +44,10 @@ type Provider interface {
 	// This handles provider-specific input formatting (e.g., stream-json for Claude).
 	BuildInputMessage(prompt string, taskInstructions string) (map[string]any, error)
 
-	// ParseEvent parses a raw output line into a normalized ProviderEvent.
-	// Returns nil if the line should be ignored (e.g., system messages).
+	// ParseEvent parses a raw output line into one or more normalized ProviderEvents.
+	// Returns empty slice if the line should be ignored (e.g., system messages).
 	// Returns an error if parsing fails critically.
-	ParseEvent(line string) (*ProviderEvent, error)
+	ParseEvent(line string) ([]*ProviderEvent, error)
 
 	// DetectTurnEnd checks if the event indicates the end of a turn.
 	// Different providers signal turn completion differently:

@@ -29,6 +29,10 @@ type SessionStats struct {
 	currentToolName  string    `json:"-"`
 	currentToolID    string    `json:"-"`
 
+	// Tool ID to name mapping for reliable lookup when tool_result doesn't include name
+	// This handles the case where Claude CLI sends tool_result without tool_name
+	toolIDMap map[string]string `json:"-"`
+
 	// Phase tracking for duration breakdown
 	thinkingStart   time.Time `json:"-"`
 	generationStart time.Time `json:"-"`
@@ -51,6 +55,21 @@ func (s *SessionStats) GetCurrentToolID() string {
 	return s.currentToolID
 }
 
+// GetToolNameByToolID returns the tool name for a given tool ID.
+// This is useful when tool_result events don't include tool_name.
+// Returns empty string if tool ID is not found.
+func (s *SessionStats) GetToolNameByToolID(toolID string) string {
+	if toolID == "" {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.toolIDMap == nil {
+		return ""
+	}
+	return s.toolIDMap[toolID]
+}
+
 // RecordToolUse records the start of a tool call.
 func (s *SessionStats) RecordToolUse(toolName, toolID string) {
 	s.mu.Lock()
@@ -62,16 +81,36 @@ func (s *SessionStats) RecordToolUse(toolName, toolID string) {
 	if s.ToolsUsed == nil {
 		s.ToolsUsed = make(map[string]bool)
 	}
+	// Ensure toolIDMap is initialized
+	if s.toolIDMap == nil {
+		s.toolIDMap = make(map[string]string)
+	}
+	// Record tool ID to name mapping for reliable lookup in RecordToolResult
+	// This handles the case where Claude CLI sends tool_result without tool_name
+	if toolID != "" && toolName != "" {
+		s.toolIDMap[toolID] = toolName
+	}
 }
 
 // RecordToolResult records the end of a tool call.
 // If RecordToolUse was not called (e.g., Claude Code didn't send tool_use event),
 // this will record a minimal duration (1ms) to indicate the tool completed.
-func (s *SessionStats) RecordToolResult() (durationMs int64) {
+func (s *SessionStats) RecordToolResult(toolID string) (durationMs int64, toolName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.ToolCallCount++
+
+	// Try to get tool name from toolID map first (most reliable)
+	// This handles the case where Claude CLI sends tool_result without tool_name
+	if toolID != "" && s.toolIDMap != nil {
+		toolName = s.toolIDMap[toolID]
+	}
+
+	// Fallback: use currentToolName if toolID map didn't have it
+	if toolName == "" {
+		toolName = s.currentToolName
+	}
 
 	if !s.currentToolStart.IsZero() {
 		// Normal case: tool_use was received, calculate actual duration
@@ -86,11 +125,11 @@ func (s *SessionStats) RecordToolResult() (durationMs int64) {
 	}
 
 	// Record tool name if available
-	if s.currentToolName != "" {
+	if toolName != "" {
 		if s.ToolsUsed == nil {
 			s.ToolsUsed = make(map[string]bool)
 		}
-		s.ToolsUsed[s.currentToolName] = true
+		s.ToolsUsed[toolName] = true
 	}
 
 	// Reset current tool tracking
@@ -98,7 +137,7 @@ func (s *SessionStats) RecordToolResult() (durationMs int64) {
 	s.currentToolName = ""
 	s.currentToolID = ""
 
-	return durationMs
+	return durationMs, toolName
 }
 
 // RecordTokens records token usage.

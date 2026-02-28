@@ -10,6 +10,7 @@ build/
 *.dylib
 *.test
 *.out
+*.log
 
 # Node/Frontend
 node_modules/
@@ -60,3 +61,4 @@ docs/images/png/
 
 # slack-go sdk
 docs/slack-0.18.0
+logs

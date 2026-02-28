@@ -17,11 +17,14 @@ func TestSessionStats_RecordToolUse(t *testing.T) {
 	time.Sleep(1 * time.Millisecond)
 
 	// Verify internal state (need to check via RecordToolResult)
-	duration := stats.RecordToolResult()
+	duration, toolName := stats.RecordToolResult("tool-123")
 
 	// Duration may be 0 if too fast, so we just check it's non-negative
 	if duration < 0 {
 		t.Errorf("RecordToolResult() returned negative duration: %d", duration)
+	}
+	if toolName != "bash" {
+		t.Errorf("RecordToolResult() toolName = %q, want %q", toolName, "bash")
 	}
 	if stats.ToolCallCount != 1 {
 		t.Errorf("ToolCallCount = %d, want 1", stats.ToolCallCount)
@@ -36,13 +39,16 @@ func TestSessionStats_RecordToolUse_NilMap(t *testing.T) {
 
 	// ToolsUsed is nil, should be initialized
 	stats.RecordToolUse("edit", "tool-456")
-	_ = stats.RecordToolResult()
+	_, toolName := stats.RecordToolResult("tool-456")
 
 	if stats.ToolsUsed == nil {
 		t.Error("ToolsUsed should be initialized")
 	}
 	if !stats.ToolsUsed["edit"] {
 		t.Error("ToolsUsed should contain 'edit'")
+	}
+	if toolName != "edit" {
+		t.Errorf("RecordToolResult() toolName = %q, want %q", toolName, "edit")
 	}
 }
 
@@ -51,10 +57,13 @@ func TestSessionStats_RecordToolResult_NoStart(t *testing.T) {
 
 	// Call RecordToolResult without RecordToolUse
 	// This records minimal duration (1ms) because Claude Code CLI may not send tool_use events
-	duration := stats.RecordToolResult()
+	duration, toolName := stats.RecordToolResult("")
 
 	if duration != 1 {
 		t.Errorf("RecordToolResult() without RecordToolUse should return 1 (minimal duration), got %d", duration)
+	}
+	if toolName != "" {
+		t.Errorf("RecordToolResult() toolName = %q, want empty string", toolName)
 	}
 	if stats.ToolCallCount != 1 {
 		t.Errorf("ToolCallCount = %d, want 1", stats.ToolCallCount)
@@ -308,7 +317,10 @@ func TestSessionStats_ToolTracking(t *testing.T) {
 		toolName := fmt.Sprintf("tool-%d", i)
 		stats.RecordToolUse(toolName, fmt.Sprintf("id-%d", i))
 		time.Sleep(1 * time.Millisecond)
-		_ = stats.RecordToolResult()
+		_, returnedToolName := stats.RecordToolResult(fmt.Sprintf("id-%d", i))
+		if returnedToolName != toolName {
+			t.Errorf("RecordToolResult() returned toolName = %q, want %q", returnedToolName, toolName)
+		}
 	}
 
 	// Verify counts
@@ -319,5 +331,65 @@ func TestSessionStats_ToolTracking(t *testing.T) {
 	// Should have 5 unique tools
 	if len(stats.ToolsUsed) != 5 {
 		t.Errorf("len(ToolsUsed) = %d, want 5", len(stats.ToolsUsed))
+	}
+}
+
+// TestSessionStats_ToolIDMap tests the toolID -> toolName mapping
+// This is the key fix for when Claude CLI sends tool_result without tool_name
+func TestSessionStats_ToolIDMap(t *testing.T) {
+	stats := &SessionStats{SessionID: "test"}
+
+	// Record tool use with name and ID
+	stats.RecordToolUse("Read", "call_abc123")
+
+	// Simulate tool_result arriving after currentToolName has been cleared
+	// First call RecordToolResult to clear currentToolName
+	stats.RecordToolResult("call_abc123")
+
+	// Now verify we can still get tool name by toolID
+	toolName := stats.GetToolNameByToolID("call_abc123")
+	if toolName != "Read" {
+		t.Errorf("GetToolNameByToolID() = %q, want %q", toolName, "Read")
+	}
+
+	// Unknown toolID should return empty
+	unknownTool := stats.GetToolNameByToolID("unknown_id")
+	if unknownTool != "" {
+		t.Errorf("GetToolNameByToolID(unknown) = %q, want empty", unknownTool)
+	}
+
+	// Empty toolID should return empty
+	emptyTool := stats.GetToolNameByToolID("")
+	if emptyTool != "" {
+		t.Errorf("GetToolNameByToolID(empty) = %q, want empty", emptyTool)
+	}
+}
+
+// TestSessionStats_RecordToolResult_WithToolIDMap tests RecordToolResult
+// correctly uses the toolID map when currentToolName is empty
+func TestSessionStats_RecordToolResult_WithToolIDMap(t *testing.T) {
+	stats := &SessionStats{SessionID: "test"}
+
+	// Record tool use
+	stats.RecordToolUse("Bash", "call_xyz789")
+
+	// Clear current tool tracking (simulating what happens after first RecordToolResult)
+	stats.currentToolName = ""
+	stats.currentToolID = ""
+	stats.currentToolStart = time.Time{}
+
+	// Now call RecordToolResult with only toolID
+	// It should use the toolID map to get the tool name
+	duration, toolName := stats.RecordToolResult("call_xyz789")
+
+	if toolName != "Bash" {
+		t.Errorf("RecordToolResult() toolName = %q, want %q", toolName, "Bash")
+	}
+	if duration != 1 {
+		// Should be 1ms because currentToolStart was cleared
+		t.Errorf("RecordToolResult() duration = %d, want 1", duration)
+	}
+	if !stats.ToolsUsed["Bash"] {
+		t.Error("ToolsUsed should contain 'Bash'")
 	}
 }

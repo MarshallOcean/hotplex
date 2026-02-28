@@ -201,12 +201,31 @@ func (a *Adapter) defaultSender(ctx context.Context, sessionID string, msg *base
 	if a.messageBuilder != nil {
 		blocks := a.messageBuilder.Build(msg)
 		if len(blocks) > 0 {
+			// Build fallback text for Slack API (required for notifications and accessibility)
+			// Use msg.Content if available, otherwise generate from message type
+			fallbackText := msg.Content
+			if fallbackText == "" {
+				// Generate fallback text from message type to avoid empty text
+				switch msg.Type {
+				case base.MessageTypeToolUse:
+					fallbackText = "Using tool..."
+				case base.MessageTypeToolResult:
+					fallbackText = "Tool completed"
+				case base.MessageTypeThinking:
+					fallbackText = "Thinking..."
+				case base.MessageTypeError:
+					fallbackText = "Error occurred"
+				default:
+					fallbackText = "Message"
+				}
+			}
+
 			// If we have message_ts, update existing message instead of creating new one
 			if messageTS != "" {
-				return a.UpdateMessageSDK(ctx, channelID, messageTS, blocks, msg.Content)
+				return a.UpdateMessageSDK(ctx, channelID, messageTS, blocks, fallbackText)
 			}
 			// Otherwise send new message and store ts in metadata
-			ts, err := a.sendBlocksSDK(ctx, channelID, blocks, threadTS, msg.Content)
+			ts, err := a.sendBlocksSDK(ctx, channelID, blocks, threadTS, fallbackText)
 			if err != nil {
 				return err
 			}

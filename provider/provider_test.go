@@ -162,10 +162,14 @@ func TestClaudeCodeProvider_ParseEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event, err := provider.ParseEvent(tt.line)
+			events, err := provider.ParseEvent(tt.line)
 			if err != nil {
 				t.Fatalf("ParseEvent failed: %v", err)
 			}
+			if len(events) == 0 {
+				t.Fatal("Expected at least one event")
+			}
+			event := events[0]
 			if event.Type != tt.wantType {
 				t.Errorf("Expected type %s, got %s", tt.wantType, event.Type)
 			}
@@ -331,12 +335,26 @@ func TestOpenCodeProvider_ParseEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event, err := provider.ParseEvent(tt.line)
+			events, err := provider.ParseEvent(tt.line)
 			if err != nil {
 				t.Fatalf("ParseEvent failed: %v", err)
 			}
-			if event.Type != tt.wantType {
-				t.Errorf("Expected type %s, got %s", tt.wantType, event.Type)
+			if len(events) == 0 {
+				t.Fatal("Expected at least one event")
+			}
+			found := false
+			for _, event := range events {
+				if event.Type == tt.wantType {
+					found = true
+					break
+				}
+			}
+			if !found {
+				var types []ProviderEventType
+				for _, e := range events {
+					types = append(types, e.Type)
+				}
+				t.Errorf("Expected type %s in %v", tt.wantType, types)
 			}
 		})
 	}

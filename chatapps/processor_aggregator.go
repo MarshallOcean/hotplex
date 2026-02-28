@@ -34,10 +34,10 @@ var defaultEventConfig = map[string]EventConfig{
 	"user_message_received": {Aggregate: false, Immediate: true},   // Show immediately - acknowledgment
 
 	// Core events
-	"thinking":    {Aggregate: false, Immediate: true},                                     // Show immediately, 500ms dedup window in handler
-	"tool_use":    {Aggregate: true, SameTypeOnly: true, Immediate: false, MinContent: 50}, // 500ms aggregation
-	"tool_result": {Aggregate: false, Immediate: true},                                     // Per spec: 不聚合 - 立即发送
-	"answer":      {Aggregate: true, UseUpdate: true, Immediate: false},                    // Stream with chat.update (1/sec)
+	"thinking":    {Aggregate: false, Immediate: true},                  // Show immediately, 500ms dedup window in handler
+	"tool_use":    {Aggregate: true, SameTypeOnly: true},                // Aggregate rapid invocations (e.g. multi-file reads)
+	"tool_result": {Aggregate: true, SameTypeOnly: true},                // Aggregate rapid results (e.g. LS outputs)
+	"answer":      {Aggregate: true, UseUpdate: true, Immediate: false}, // Stream with chat.update (1/sec)
 
 	// Status events
 	"error":         {Aggregate: false, Immediate: true}, // Show immediately - errors need instant feedback
@@ -234,7 +234,7 @@ func (p *MessageAggregatorProcessor) Process(ctx context.Context, msg *base.Chat
 // bufferMessage adds message to buffer and returns nil (will be sent later)
 // Implements buffer safety limits with FIFO overflow strategy
 // Note: This method handles its own locking to support safe flush operations
-func (p *MessageAggregatorProcessor) bufferMessage(ctx context.Context, msg *base.ChatMessage, eventConfig EventConfig, eventType string) (*base.ChatMessage, error) {
+func (p *MessageAggregatorProcessor) bufferMessage(_ context.Context, msg *base.ChatMessage, eventConfig EventConfig, eventType string) (*base.ChatMessage, error) {
 	// Build session key with event type for SameTypeOnly aggregation
 	sessionKey := msg.Platform + ":" + msg.SessionID
 	if eventConfig.SameTypeOnly {
@@ -502,15 +502,26 @@ func (p *MessageAggregatorProcessor) aggregateMessages(messages []*base.ChatMess
 
 	// Create aggregated message
 	aggregated := &base.ChatMessage{
+		Type:        first.Type,
 		Platform:    first.Platform,
 		SessionID:   first.SessionID,
 		UserID:      first.UserID,
 		Content:     combined.String(),
 		MessageID:   first.MessageID,
 		Timestamp:   first.Timestamp,
-		Metadata:    first.Metadata,
+		Metadata:    make(map[string]any),
 		RichContent: first.RichContent,
 	}
+
+	// Copy metadata from first message
+	if first.Metadata != nil {
+		for k, v := range first.Metadata {
+			aggregated.Metadata[k] = v
+		}
+	}
+
+	// Store original messages for sophisticated rendering in platform builders
+	aggregated.Metadata["_original_messages"] = messages
 
 	// Merge RichContent from all messages
 	if len(messages) > 1 {

@@ -1,5 +1,88 @@
 # CHANGELOG.md
 
+## [v0.15.0] - 2026-02-28
+
+### ✨ Support for Plan Mode & Interaction Refinements
+
+This release introduces support for Claude **Plan Mode** and the `AskUserQuestion` tool, enabling more collaborative and structured AI interactions. It also includes significant stability fixes and UI enhancements for the Slack integration.
+
+### Added
+- **Claude Plan Mode Support** - Full support for `plan` mode events and `exit_plan_mode` tool.
+- **`AskUserQuestion` Integration** - Enables AI agents to pause execution and request user feedback directly.
+- **Dynamic Status Indicators** - Real-time event type indicators in Slack status messages for better process transparency.
+- **Interactive Permission Requests** - Added support for permission requests via `stdin` for platform-independent interaction (Refs #39).
+- **Error Visualization** - Visual border styling and improved quoting for error blocks in Slack.
+
+### Fixed
+- **Slack Command Reliability** - Improved `#reset` command handling in threads and fixed marker deletion issues.
+- **Message Stability** - Enhanced handling of stale `message_ts` to prevent update errors during rapid state changes.
+- **Session Context Safety** - Ensured proper `session_id` propagation in security block messages and adapter layers.
+- **Link Checker Scope** - Optimized automated link checking by limiting scope to `docs-site` and `scripts` directories.
+
+### Changed
+- **Validation Logic Refinement** - Simplified and hardened `BuildPlanItem` validation for better reliability.
+- **Type Safety Enhancements** - Improved type safety across Slack component builders and event handlers.
+- **Nomenclature Sync** - Aligned internal terminology with the latest SSOT documentation.
+
+### Technical Details
+- **Major Features**: Plan Mode, AskUserQuestion, Security Block fixes.
+- **Platform**: Slack Adapter refinements and core engine stability.
+- **Documentation**: Updated verification reports for Plan Mode and tool findings.
+
+### Contributors
+- [@hrygo](https://github.com/hrygo)
+
+### Related
+- **Verification**: [Plan Mode Findings](docs/verification/exit-plan-mode-findings.md)
+- **Issue**: [#39](https://github.com/hrygo/hotplex/issues/39) - Permission request support
+
+---
+
+## [v0.13.1] - 2026-02-28
+
+### ✨ Slack UX Refinements & Verification Systems
+
+This release provides critical refinements to the Slack UX implementation, ensuring better stability, more accurate event aggregation, and enhanced interaction features. It also introduces a comprehensive verification system for engine events and Slack Block Kit mapping.
+
+### Added
+- **Real-Time Typing Indicator** - Slack native typing indicator during AI response for improved feedback.
+- **Direct Message Support** - Proper handling of DM channels and thread-local context in DMs.
+- **Tool ID Mapping** - Persistent tool name tracking across turns using internal tool ID persistence.
+- **Exhaustive Verification System** - New Python-based verification suites for event-to-block mapping and session lifecycle.
+- **Hot-Multiplexing Statistics** - Enhanced session pool observability with real-time stats for active/idle sessions.
+
+### Changed
+- **Session Stats Summary** - Refined compact summary style to match the UX specification exactly (⚡ tokens separated by In/Out).
+- **Event Aggregation Logic** - Improved aggregation to prevent skipping `ToolResult` events and preserve tool names accurately.
+- **Thinking Event Mapping** - Corrected tool name mapping for `Thinking` and `ToolUse` events.
+
+### Fixed
+- **Message Stability** - Fixed `cant_update_message` errors caused by stale `message_ts` in rapid update scenarios.
+- **Channel/Thread Safety** - Handled invalid channel/thread combinations for better Slack platform compatibility.
+- **Tool Result Timing** - Ensure tool execution duration is only displayed when it exceeds the 500ms threshold.
+- **Aggregation Reliability** - Fixed edge cases where rapid tool calls could lose the final tool's state.
+- **Error Handling** - Improved resilience when processing empty content or invalid Slack block structures.
+
+### Documentation
+- **Verification Reports** - Added comprehensive verification reports for Engine Events and Slack UX (`docs/verification/`).
+- **Slack UX Spec Updates** - Refined event definitions and aggregation rules in the unified spec.
+
+### Technical Details
+- **Files Changed**: 23 files
+- **Lines Added**: +3,044
+- **Lines Removed**: -295
+- **New Scripts**: `scripts/verify_claude_exhaustive.py`, `scripts/verification_report.md`
+- **New Package**: Enhanced stats tracking in `engine/stats.go`
+
+### Contributors
+- [@hrygo](https://github.com/hrygo)
+
+### Related
+- **Spec**: [Slack Block Kit Mapping](docs/chatapps/engine-events-slack-ux-spec.md)
+- **Verification**: [Slack UX Verification Report](docs/verification/slack-ux-verification-report.md)
+
+---
+
 ## [v0.13.0] - 2026-02-28
 
 ### ✨ Major Features: Complete Slack UX Implementation

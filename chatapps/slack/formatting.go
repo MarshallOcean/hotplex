@@ -18,8 +18,15 @@ func NewMrkdwnFormatter() *MrkdwnFormatter {
 }
 
 // Format converts Markdown text to Slack mrkdwn format
-// Handles: bold, italic, strikethrough, code blocks, links
-// Order: links -> bold -> italic -> strikethrough -> escape (to preserve URLs and code)
+//
+// Conversion order follows CommonMark specification precedence:
+// 1. Block-level structures first (headings, lists, blockquotes, code blocks)
+// 2. Code spans protected (highest inline precedence per CommonMark)
+// 3. Links (before emphasis, as link content shouldn't be emphasized)
+// 4. Emphasis (bold, italic, strikethrough)
+// 5. Special character escaping (last, to avoid breaking syntax)
+//
+// Reference: https://spec.commonmark.org/0.31.2/chapter-6/
 func (f *MrkdwnFormatter) Format(text string) string {
 	if text == "" {
 		return ""
@@ -27,47 +34,77 @@ func (f *MrkdwnFormatter) Format(text string) string {
 
 	result := text
 
-	// 1. Convert Links first (before escaping, to preserve URLs)
+	// ================================================================
+	// PHASE 1: Block-level structures (line-based transformations)
+	// These must run first as they define document structure
+	// ================================================================
+
+	// 1. Convert Headings: # H1 -> *H1* (Slack uses bold for headings)
+	// Must run before inline formatting to avoid processing heading content
+	result = f.convertHeadings(result)
+
+	// 2. Convert Lists: - item -> • item
+	// Block-level list items, runs before inline formatting
+	result = f.convertLists(result)
+
+	// 3. Convert Blockquotes: > quote -> > quote
+	// Uses BLOCKQUOTE_START marker to protect from escaping
+	result = f.convertBlockquotes(result)
+
+	// ================================================================
+	// PHASE 2: Inline structures (within-line transformations)
+	// Order follows CommonMark precedence rules
+	// ================================================================
+
+	// 4. Protect code spans by extracting them
+	// Code spans have HIGHEST precedence per CommonMark spec
+	// Content inside `code` and ```code``` should not be parsed
+	codePlaceholders, result := f.extractCodeSpans(result)
+
+	// 5. Convert Links: [text](url) -> <url|text>
+	// Links take precedence over emphasis - link content shouldn't be bold/italic
 	result = f.convertLinks(result)
 
-	// 2. Convert Bold: **text** or __text__ -> *text*
+	// 6. Convert Bold: **text** or __text__ -> *text* (Slack bold format)
+	// Emphasis has lower precedence than code and links
 	result = f.convertBold(result)
 
-	// 3. Convert Italic: *text* or _text_ -> _text_
+	// 7. Convert Italic: _text_ -> _text_ (Slack italic format)
+	// Single underscore italic only (*text* is Slack bold, not Markdown italic)
 	result = f.convertItalic(result)
 
-	// 4. Convert Strikethrough: ~~text~~ -> ~text~
+	// 8. Convert Strikethrough: ~~text~~ -> ~text~ (Slack strike format)
 	result = f.convertStrikethrough(result)
 
-	// 5. Escape special characters last (preserves code blocks)
+	// ================================================================
+	// PHASE 3: Restoration and escaping
+	// ================================================================
+
+	// 9. Escape special characters: & < > -> &amp; &lt; &gt;
+	// Must run BEFORE restoring code spans
+	// Placeholders protect the code content from being escaped
 	result = f.escapeSpecialChars(result)
+
+	// 10. Restore code spans (replace placeholders with original code)
+	// This brings back the original code with its special characters intact
+	result = f.restoreCodeSpans(result, codePlaceholders)
+
+	// 11. Restore blockquote markers
+	result = strings.ReplaceAll(result, "BLOCKQUOTE_START", "> ")
 
 	return result
 }
 
-// escapeSpecialChars escapes & < > for mrkdwn safely, preserving code blocks and Slack syntax
-// Only skips valid Slack syntax: <!...>, <@...>, <#...>, <url|text>
+// escapeSpecialChars escapes & < > for mrkdwn safely
+// Code spans are already protected via placeholders, so we only need to:
+// 1. Escape special characters outside of Slack syntax
+// 2. Preserve Slack syntax: <!...>, <@...>, <#...>, <url|text>
 func (f *MrkdwnFormatter) escapeSpecialChars(text string) string {
 	var result strings.Builder
-	inCodeBlock := false
-	inInlineCode := false
 
 	for i := 0; i < len(text); i++ {
-		// Check for code block boundaries (```)
-		if strings.HasPrefix(text[i:], "```") {
-			inCodeBlock = !inCodeBlock
-			result.WriteString("```")
-			i += 2 // Skip the next two backticks
-			continue
-		}
-
-		// Check for inline code boundaries (`)
-		if text[i] == '`' && (i == 0 || text[i-1] != '\\') {
-			inInlineCode = !inInlineCode
-		}
-
 		// Skip Slack special syntax: <!here>, <@user>, <#channel>, <url|text>
-		if text[i] == '<' && !inCodeBlock && !inInlineCode {
+		if text[i] == '<' {
 			// Find closing >
 			endIdx := -1
 			for j := i + 1; j < len(text); j++ {
@@ -88,24 +125,19 @@ func (f *MrkdwnFormatter) escapeSpecialChars(text string) string {
 			}
 		}
 
-		// Only escape special characters outside of code
-		if !inCodeBlock && !inInlineCode {
-			switch text[i] {
-			case '&':
-				result.WriteString("&amp;")
-			case '<':
-				result.WriteString("&lt;")
-			case '>':
-				result.WriteString("&gt;")
-			default:
-				result.WriteByte(text[i])
-			}
-			continue
+		// Escape special characters
+		switch text[i] {
+		case '&':
+			result.WriteString("&amp;")
+		case '<':
+			result.WriteString("&lt;")
+		case '>':
+			result.WriteString("&gt;")
+		default:
+			result.WriteByte(text[i])
 		}
-
-		// Preserve characters inside code as-is
-		result.WriteByte(text[i])
 	}
+
 	return result.String()
 }
 
@@ -147,8 +179,11 @@ func (f *MrkdwnFormatter) convertBold(text string) string {
 	return result.String()
 }
 
-// convertItalic converts _text_ to _text_
-// Does NOT convert *text* (Slack uses * for bold, not italic)
+// convertItalic converts _text_ to _text_ (Slack italic format)
+// Does NOT convert *text* because:
+//   - **text** was already converted to *text* (Slack bold) by convertBold
+//   - *text* in Markdown is italic, but in Slack mrkdwn *text* is bold
+//   - So we only convert _text_ (underscore italic) to _text_ (Slack italic)
 func (f *MrkdwnFormatter) convertItalic(text string) string {
 	var result strings.Builder
 	inCodeBlock := false
@@ -222,6 +257,160 @@ func (f *MrkdwnFormatter) convertStrikethrough(text string) string {
 	return result.String()
 }
 
+// convertHeadings converts Markdown headings to Slack bold format
+// # H1 -> *H1*, ## H2 -> *H2*, ### H3 -> *H3*, etc.
+// Slack mrkdwn doesn't support headings, so we use bold as the closest equivalent
+func (f *MrkdwnFormatter) convertHeadings(text string) string {
+	var result strings.Builder
+	inCodeBlock := false
+	lines := strings.Split(text, "\n")
+
+	for lineIdx, line := range lines {
+		if lineIdx > 0 {
+			result.WriteByte('\n')
+		}
+
+		// Check if we're in a code block
+		if strings.HasPrefix(line, "```") {
+			inCodeBlock = !inCodeBlock
+			result.WriteString(line)
+			continue
+		}
+
+		if inCodeBlock {
+			result.WriteString(line)
+			continue
+		}
+
+		// Match headings: # H1, ## H2, ### H3, #### H4, ##### H5, ###### H6
+		// Must be at the start of line and followed by a space
+		trimmed := strings.TrimLeft(line, "#")
+		hashCount := len(line) - len(trimmed)
+
+		if hashCount > 0 && hashCount <= 6 && len(trimmed) > 0 && trimmed[0] == ' ' {
+			headingText := strings.TrimSpace(trimmed)
+			// Convert to *heading* (bold in mrkdwn)
+			result.WriteString("*" + headingText + "*")
+		} else {
+			result.WriteString(line)
+		}
+	}
+
+	return result.String()
+}
+
+// convertLists converts Markdown lists to Slack bullet format
+// - item -> • item
+// * item -> • item
+// + item -> • item
+// 1. item -> • item
+// 2. item -> • item
+func (f *MrkdwnFormatter) convertLists(text string) string {
+	var result strings.Builder
+	inCodeBlock := false
+	lines := strings.Split(text, "\n")
+
+	for lineIdx, line := range lines {
+		if lineIdx > 0 {
+			result.WriteByte('\n')
+		}
+
+		// Check if we're in a code block
+		if strings.HasPrefix(line, "```") {
+			inCodeBlock = !inCodeBlock
+			result.WriteString(line)
+			continue
+		}
+
+		if inCodeBlock {
+			result.WriteString(line)
+			continue
+		}
+
+		// Match unordered lists: -, *, + followed by space
+		trimmed := strings.TrimLeft(line, " \t")
+		if len(trimmed) > 1 {
+			firstChar := trimmed[0]
+			secondChar := trimmed[1]
+			if (firstChar == '-' || firstChar == '*' || firstChar == '+') && secondChar == ' ' {
+				// Replace with bullet point
+				listContent := strings.TrimSpace(trimmed[2:])
+				indent := len(line) - len(trimmed)
+				result.WriteString(strings.Repeat(" ", indent) + "• " + listContent)
+				continue
+			}
+		}
+
+		// Match ordered lists: 1. item, 2. item, etc.
+		if len(trimmed) > 2 {
+			// Check for digit(s) followed by ". "
+			dotIdx := strings.Index(trimmed, ". ")
+			if dotIdx > 0 {
+				isOrdered := true
+				for _, ch := range trimmed[:dotIdx] {
+					if ch < '0' || ch > '9' {
+						isOrdered = false
+						break
+					}
+				}
+				if isOrdered {
+					listContent := strings.TrimSpace(trimmed[dotIdx+2:])
+					indent := len(line) - len(trimmed)
+					result.WriteString(strings.Repeat(" ", indent) + "• " + listContent)
+					continue
+				}
+			}
+		}
+
+		result.WriteString(line)
+	}
+
+	return result.String()
+}
+
+// convertBlockquotes converts Markdown blockquotes to Slack format
+// > quote -> > quote
+// Slack mrkdwn supports blockquotes with the > prefix
+// This must run BEFORE escapeSpecialChars to prevent > from being escaped
+func (f *MrkdwnFormatter) convertBlockquotes(text string) string {
+	var result strings.Builder
+	inCodeBlock := false
+	lines := strings.Split(text, "\n")
+
+	for lineIdx, line := range lines {
+		if lineIdx > 0 {
+			result.WriteByte('\n')
+		}
+
+		// Check if we're in a code block
+		if strings.HasPrefix(line, "```") {
+			inCodeBlock = !inCodeBlock
+			result.WriteString(line)
+			continue
+		}
+
+		if inCodeBlock {
+			result.WriteString(line)
+			continue
+		}
+
+		// Match blockquote: > followed by space or end of line
+		trimmed := strings.TrimLeft(line, " \t")
+		if len(trimmed) > 0 && trimmed[0] == '>' {
+			// Already a blockquote, ensure proper format
+			quoteContent := strings.TrimSpace(trimmed[1:])
+			// Use a placeholder that won't be escaped, then convert back later
+			// Actually, we need to protect the > from escapeSpecialChars
+			// Strategy: use a special marker
+			result.WriteString("BLOCKQUOTE_START" + quoteContent)
+		} else {
+			result.WriteString(line)
+		}
+	}
+
+	return result.String()
+}
+
 // convertLinks converts [text](url) to <url|text>
 func (f *MrkdwnFormatter) convertLinks(text string) string {
 	var result strings.Builder
@@ -237,10 +426,13 @@ func (f *MrkdwnFormatter) convertLinks(text string) string {
 					closeParen := strings.Index(text[openParen+1:], ")")
 					if closeParen != -1 {
 						url := text[openParen+1 : openParen+1+closeParen]
-						link := "<" + url + "|" + linkText + ">"
-						result.WriteString(link)
-						i = openParen + 1 + closeParen + 1
-						continue
+						// Only convert if URL is not empty
+						if url != "" {
+							link := "<" + url + "|" + linkText + ">"
+							result.WriteString(link)
+							i = openParen + 1 + closeParen + 1
+							continue
+						}
 					}
 				}
 			}
@@ -249,6 +441,118 @@ func (f *MrkdwnFormatter) convertLinks(text string) string {
 		i++
 	}
 	return result.String()
+}
+
+// =============================================================================
+// Code Span Protection (CommonMark Highest Precedence)
+// =============================================================================
+
+// codeSpanPlaceholder is used to temporarily replace code spans during processing
+type codeSpanPlaceholder struct {
+	original string
+}
+
+// extractCodeSpans extracts inline code spans (`code`) and code blocks (```code```)
+// and replaces them with placeholders to protect them from other transformations
+// Returns the map of placeholders to original code, and the text with replacements
+func (f *MrkdwnFormatter) extractCodeSpans(text string) (map[string]codeSpanPlaceholder, string) {
+	placeholders := make(map[string]codeSpanPlaceholder)
+	var result strings.Builder
+	placeholderCounter := 0
+
+	inCodeBlock := false
+	codeBlockStart := -1
+
+	i := 0
+	for i < len(text) {
+		// Check for code block boundaries (```)
+		if strings.HasPrefix(text[i:], "```") {
+			if !inCodeBlock {
+				// Starting a code block
+				inCodeBlock = true
+				codeBlockStart = i
+				// Find the end of the opening ```
+				i += 3
+				// Skip language identifier if present (until newline)
+				newlineIdx := strings.Index(text[i:], "\n")
+				if newlineIdx != -1 {
+					i = i + newlineIdx + 1
+				}
+				continue
+			} else {
+				// Ending a code block
+				// Extract the full code block including markers
+				fullBlock := text[codeBlockStart : i+3]
+				placeholder := fmt.Sprintf("%%CODESPAN%d%%", placeholderCounter)
+				placeholders[placeholder] = codeSpanPlaceholder{original: fullBlock}
+				result.WriteString(placeholder)
+				placeholderCounter++
+				inCodeBlock = false
+				i += 3
+				continue
+			}
+		}
+
+		if inCodeBlock {
+			// Accumulate code block content (already handled language line)
+			// Just move to the next character
+			i++
+			continue
+		}
+
+		// Check for inline code (`code`)
+		if text[i] == '`' {
+			// Count consecutive backticks
+			backtickCount := 0
+			for j := i; j < len(text) && text[j] == '`'; j++ {
+				backtickCount++
+			}
+
+			if backtickCount == 1 {
+				// Single backtick - inline code
+				// Find closing backtick
+				endIdx := -1
+				for j := i + 1; j < len(text); j++ {
+					if text[j] == '`' && (j == 0 || text[j-1] != '\\') {
+						endIdx = j
+						break
+					}
+				}
+				if endIdx != -1 {
+					// Found closing backtick
+					inlineCode := text[i : endIdx+1]
+					placeholder := fmt.Sprintf("%%CODESPAN%d%%", placeholderCounter)
+					placeholders[placeholder] = codeSpanPlaceholder{original: inlineCode}
+					result.WriteString(placeholder)
+					placeholderCounter++
+					i = endIdx + 1
+					continue
+				}
+			}
+		}
+
+		result.WriteByte(text[i])
+		i++
+	}
+
+	// Handle unclosed code block (treat rest as code)
+	if inCodeBlock {
+		fullBlock := text[codeBlockStart:]
+		placeholder := fmt.Sprintf("%%CODESPAN%d%%", placeholderCounter)
+		placeholders[placeholder] = codeSpanPlaceholder{original: fullBlock}
+		result.WriteString(placeholder)
+	}
+
+	return placeholders, result.String()
+}
+
+// restoreCodeSpans replaces placeholders with original code spans
+func (f *MrkdwnFormatter) restoreCodeSpans(text string, placeholders map[string]codeSpanPlaceholder) string {
+	result := text
+	for placeholder, span := range placeholders {
+		result = strings.ReplaceAll(result, placeholder, span.original)
+	}
+	return result
 }
 
 // FormatCodeBlock formats a code block with optional language

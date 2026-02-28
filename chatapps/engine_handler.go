@@ -99,6 +99,9 @@ type StreamCallback struct {
 	metadata     map[string]any  // Original message metadata (channel_id, thread_ts, etc.)
 	processor    *ProcessorChain // Message processor chain
 
+	// Session lifecycle state - ensures correct event ordering
+	sessionStartSent bool // Tracks if session_start event has been sent
+
 	// Status message state for dynamic event type indicator
 	// Reuses thinking message infrastructure for in-place updates
 	thinkingChannelID string           // Channel ID for status message updates
@@ -151,8 +154,8 @@ func (c *StreamCallback) SendAggregatedMessage(ctx context.Context, msg *ChatMes
 
 // Handle implements event.Callback
 func (c *StreamCallback) Handle(eventType string, data any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Note: No mutex lock here - individual handlers manage their own locking
+	// This prevents deadlock when handlers need to access shared state
 
 	switch provider.ProviderEventType(eventType) {
 	case provider.EventTypeThinking:
@@ -225,9 +228,22 @@ func (c *StreamCallback) handleThinking(data any) error {
 		"thinking_channel_id", c.thinkingChannelID,
 		"thinking_message_ts", c.thinkingMessageTS)
 
-	// Skip empty thinking content
-	if thinkingContent == "" {
+	// Skip empty thinking content if not the first event
+	if thinkingContent == "" && !c.isFirst {
 		return nil
+	}
+
+	// Check if session_start has been sent
+	// NOTE: Handle() already holds c.mu lock, so we can read sessionStartSent directly
+	// without acquiring the lock again (which would cause deadlock)
+	sessionStartSent := c.sessionStartSent
+
+	if !sessionStartSent {
+		// session_start hasn't been sent yet - log warning but proceed
+		// This should not happen in normal flow, but we handle it gracefully
+		c.logger.Warn("thinking event received before session_start - proceeding anyway",
+			"session_id", c.sessionID,
+			"thinking_content", thinkingContent)
 	}
 
 	// Use updateStatusMessage for dynamic status indicator
@@ -380,6 +396,7 @@ func (c *StreamCallback) updateStatusMessage(statusType base.MessageType, displa
 // convertToChatMessage converts base.ChatMessage to ChatMessage (local type)
 func convertToChatMessage(msg *base.ChatMessage) *ChatMessage {
 	return &ChatMessage{
+		Type:        msg.Type,
 		Platform:    msg.Platform,
 		SessionID:   msg.SessionID,
 		UserID:      msg.UserID,
@@ -397,6 +414,7 @@ func (c *StreamCallback) handleToolUse(data any) error {
 	toolName := string(provider.EventTypeToolUse)
 	input := ""
 	truncated := false
+	var inputSummary string
 
 	if m, ok := data.(*event.EventWithMeta); ok {
 		c.logger.Debug("[TOOL] handleToolUse EventWithMeta",
@@ -405,6 +423,7 @@ func (c *StreamCallback) handleToolUse(data any) error {
 			"meta_input_summary", m.Meta.InputSummary)
 		if m.Meta != nil && m.Meta.ToolName != "" {
 			toolName = m.Meta.ToolName
+			inputSummary = m.Meta.InputSummary
 		}
 		if m.EventData != "" {
 			input = m.EventData
@@ -428,9 +447,11 @@ func (c *StreamCallback) handleToolUse(data any) error {
 		Type:    base.MessageTypeToolUse,
 		Content: toolName,
 		Metadata: map[string]any{
-			"input":      input,
-			"truncated":  truncated,
-			"event_type": string(provider.EventTypeToolUse),
+			"input":         input,
+			"input_summary": inputSummary,
+			"truncated":     truncated,
+			"event_type":    string(provider.EventTypeToolUse),
+			"stream":        true, // Mark as stream to allow aggregation window
 		},
 	}
 	msg.Metadata = c.mergeMetadata(msg.Metadata)
@@ -446,11 +467,10 @@ func (c *StreamCallback) handleToolResult(data any) error {
 	var filePath string
 	output := ""
 
-	_ = toolName // used in BuildToolResultBlock
-
+	var contentLength int64
 	if m, ok := data.(*event.EventWithMeta); ok {
 		c.logger.Debug("[TOOL] handleToolResult EventWithMeta",
-			"event_data", m.EventData,
+			"event_data_len", len(m.EventData),
 			"meta_tool_name", m.Meta.ToolName,
 			"meta_duration_ms", m.Meta.DurationMs,
 			"meta_status", m.Meta.Status,
@@ -466,23 +486,43 @@ func (c *StreamCallback) handleToolResult(data any) error {
 			toolName = m.Meta.ToolName
 			filePath = m.Meta.FilePath
 		}
-		if m.EventData != "" {
-			output = m.EventData
+
+		// Calculate real content length even if we use a placeholder
+		contentLength = int64(len(m.EventData))
+
+		// Only use EventData as output if we don't have an error message
+		// This prevents large file contents from being used as output
+		if output == "" && m.EventData != "" {
+			// For tool_result, we only need a brief summary, not the full content
+			// The content length is shown in the message, but not the actual content
+			output = "Output generated"
 		}
 	}
 
-	c.logger.Debug("[TOOL] handleToolResult sending", "success", success, "duration_ms", durationMs, "output_len", len(output))
+	// Skip empty tool_result events (no output, no error, no length)
+	if output == "" && toolName == "" && contentLength == 0 {
+		c.logger.Debug("[TOOL] handleToolResult skipped: empty output and tool name")
+		return nil
+	}
+
+	c.logger.Debug("[TOOL] handleToolResult sending",
+		"tool_name", toolName,
+		"success", success,
+		"duration_ms", durationMs,
+		"output_len", len(output))
 
 	// Send tool result message with platform-agnostic MessageType
 	msg := &base.ChatMessage{
 		Type:    base.MessageTypeToolResult,
 		Content: output,
 		Metadata: map[string]any{
-			"success":     success,
-			"duration_ms": durationMs,
-			"tool_name":   toolName,
-			"file_path":   filePath,
-			"event_type":  string(provider.EventTypeToolResult),
+			"success":        success,
+			"duration_ms":    durationMs,
+			"tool_name":      toolName,
+			"file_path":      filePath,
+			"content_length": contentLength,
+			"event_type":     string(provider.EventTypeToolResult),
+			"stream":         true, // Consistency with other flow events
 		},
 	}
 	msg.Metadata = c.mergeMetadata(msg.Metadata)
@@ -604,6 +644,7 @@ func (c *StreamCallback) handleDangerBlock(data any) error {
 		Content: reason,
 		Metadata: map[string]any{
 			"event_type": "security_block",
+			"session_id": c.sessionID,
 		},
 	}
 	msg.Metadata = c.mergeMetadata(msg.Metadata)
@@ -619,6 +660,13 @@ func (c *StreamCallback) handleSessionStats(data any) error {
 		return nil
 	}
 
+	// Flush any pending stream state before sending session stats
+	// This ensures the last answer message is sent before the turn completes
+	if c.streamState != nil {
+		c.streamState.Flush()
+		c.streamState = nil
+	}
+
 	// Send stats message with platform-agnostic MessageType
 	msg := &base.ChatMessage{
 		Type:    base.MessageTypeSessionStats,
@@ -626,15 +674,16 @@ func (c *StreamCallback) handleSessionStats(data any) error {
 		Metadata: map[string]any{
 			"event_type":           "session_stats",
 			"session_id":           stats.SessionID,
-			"duration_ms":          stats.TotalDurationMs,
+			"total_duration_ms":    stats.TotalDurationMs,
 			"thinking_duration_ms": stats.ThinkingDurationMs,
 			"tool_duration_ms":     stats.ToolDurationMs,
 			"tokens_in":            stats.InputTokens,
 			"tokens_out":           stats.OutputTokens,
 			"total_tokens":         stats.TotalTokens,
-			"tool_count":           stats.ToolCallCount,
+			"tool_call_count":      stats.ToolCallCount,
 			"tools_used":           stats.ToolsUsed,
 			"files_modified":       stats.FilesModified,
+			"file_paths":           stats.FilePaths,
 		},
 	}
 	msg.Metadata = c.mergeMetadata(msg.Metadata)
@@ -869,6 +918,9 @@ func (c *StreamCallback) handleRaw(data any) error {
 }
 
 // copyMessageMetadata copies important metadata from original message
+// NOTE: message_ts is intentionally NOT copied because it refers to the user's message,
+// not the bot's message. Copying it causes Slack API errors (cant_update_message)
+// when the system tries to update a message that doesn't belong to the bot.
 func (c *StreamCallback) copyMessageMetadata() map[string]any {
 	metadata := make(map[string]any)
 	if c.metadata != nil {
@@ -887,15 +939,15 @@ func (c *StreamCallback) copyMessageMetadata() map[string]any {
 		if messageID, ok := c.metadata["message_id"]; ok {
 			metadata["message_id"] = messageID
 		}
-		// Include message_ts for reaction updates and message tracking
-		if messageTS, ok := c.metadata["message_ts"]; ok {
-			metadata["message_ts"] = messageTS
-		}
+		// Do NOT copy message_ts - it refers to the user's message, not the bot's message.
+		// The bot's message_ts will be set after successfully posting a new message.
 	}
 	return metadata
 }
 
 // mergeMetadata merges the callback's stored metadata with the provided metadata
+// NOTE: message_ts is intentionally NOT copied because it refers to the user's message,
+// not the bot's message. Copying it causes Slack API errors (cant_update_message).
 func (c *StreamCallback) mergeMetadata(metadata map[string]any) map[string]any {
 	if metadata == nil {
 		metadata = make(map[string]any)
@@ -917,6 +969,7 @@ func (c *StreamCallback) mergeMetadata(metadata map[string]any) map[string]any {
 		if messageID, ok := c.metadata["message_id"]; ok {
 			metadata["message_id"] = messageID
 		}
+		// Do NOT copy message_ts - it refers to the user's message, not the bot's message.
 	}
 	return metadata
 }
@@ -1047,6 +1100,14 @@ func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) err
 					"event_type": string(provider.EventTypeError),
 				},
 			}
+			// Copy metadata from original message (channel_id, thread_ts)
+			if msg.Metadata != nil {
+				for k, v := range msg.Metadata {
+					if k == "channel_id" || k == "thread_ts" {
+						errMsg.Metadata[k] = v
+					}
+				}
+			}
 			if err := h.adapters.SendMessage(ctx, msg.Platform, msg.SessionID, errMsg); err != nil {
 				h.logger.Error("Failed to send error message", "session_id", msg.SessionID, "error", err)
 			}
@@ -1062,8 +1123,11 @@ func (h *EngineMessageHandler) Handle(ctx context.Context, msg *ChatMessage) err
 func (s *StreamState) updateThrottled(ctx context.Context, adapters *AdapterManager, platform, sessionID string, msg *base.ChatMessage) error {
 	s.mu.Lock()
 
-	// Throttle: max 1 update per second
-	if time.Since(s.LastUpdated) < time.Second {
+	// Check if this is the final message - always send final messages
+	isFinal, _ := msg.Metadata["is_final"].(bool)
+
+	// Throttle: max 1 update per second (skip for final messages)
+	if !isFinal && time.Since(s.LastUpdated) < time.Second {
 		s.mu.Unlock()
 		return nil
 	}
@@ -1087,16 +1151,7 @@ func (s *StreamState) updateThrottled(ctx context.Context, adapters *AdapterMana
 	}
 
 	// Convert base.ChatMessage to ChatMessage for adapter
-	chatMsg := &ChatMessage{
-		Platform:    msg.Platform,
-		SessionID:   msg.SessionID,
-		UserID:      msg.UserID,
-		Content:     msg.Content,
-		MessageID:   msg.MessageID,
-		Timestamp:   msg.Timestamp,
-		Metadata:    msg.Metadata,
-		RichContent: msg.RichContent,
-	}
+	chatMsg := convertToChatMessage(msg)
 
 	// Send update
 	err := adapters.SendMessage(ctx, platform, sessionID, chatMsg)
@@ -1111,6 +1166,15 @@ func (s *StreamState) updateThrottled(ctx context.Context, adapters *AdapterMana
 	s.mu.Unlock()
 
 	return err
+}
+
+// Flush forces a flush of any pending stream state
+// This ensures the last message in a stream is sent immediately
+func (s *StreamState) Flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Reset LastUpdated to allow immediate send on next update
+	s.LastUpdated = time.Time{}
 }
 
 // =============================================================================
@@ -1216,6 +1280,10 @@ func (c *StreamCallback) handleAskUserQuestion(data any) error {
 // Implements EventTypeSessionStart per spec (0.4)
 // Triggered when user sends first message or CLI needs cold start
 func (c *StreamCallback) handleSessionStart(data any) error {
+	c.mu.Lock()
+	c.sessionStartSent = true
+	c.mu.Unlock()
+
 	var content string
 
 	if m, ok := data.(*event.EventWithMeta); ok {
@@ -1269,13 +1337,12 @@ func (c *StreamCallback) handleEngineStarting(data any) error {
 // handleUserMessageReceived handles user message received acknowledgment
 // Implements EventTypeUserMessageReceived per spec (0.6)
 // Triggered immediately after user message is received
-func (c *StreamCallback) handleUserMessageReceived(data any) error {
-	// This event is typically sent before processing begins
-	// to acknowledge receipt of user message with minimal latency
-
+func (c *StreamCallback) handleUserMessageReceived(_ any) error {
+	// Per spec: context block with :inbox: emoji
+	// Content must not be empty to avoid "no_text" error
 	msg := &base.ChatMessage{
 		Type:    base.MessageTypeUserMessageReceived,
-		Content: "",
+		Content: "Message received",
 		Metadata: map[string]any{
 			"event_type": string(provider.EventTypeUserMessageReceived),
 		},

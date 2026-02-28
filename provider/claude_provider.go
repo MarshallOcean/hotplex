@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/hrygo/hotplex/internal/persistence"
 )
@@ -149,45 +150,49 @@ func (p *ClaudeCodeProvider) BuildInputMessage(prompt string, taskInstructions s
 	}, nil
 }
 
-// ParseEvent parses a Claude Code stream-json line into a ProviderEvent.
-func (p *ClaudeCodeProvider) ParseEvent(line string) (*ProviderEvent, error) {
-	// Debug: Log raw event for tool-related events
-	if strings.Contains(line, "tool") {
-		lineLen := len(line)
-		if lineLen > 500 {
-			lineLen = 500
-		}
-		p.logger.Debug("[PROVIDER] Raw tool event from CLI", "line", line[:lineLen])
-	}
-
+// ParseEvent parses a Claude Code stream-json line into one or more ProviderEvents.
+func (p *ClaudeCodeProvider) ParseEvent(line string) ([]*ProviderEvent, error) {
 	var msg StreamMessage
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		// Not valid JSON, return as raw content
-		return &ProviderEvent{
+		return []*ProviderEvent{{
 			Type:    EventTypeRaw,
 			RawType: "raw",
 			Content: line,
 			RawLine: line,
-		}, nil
+		}}, nil
 	}
 
-	event := &ProviderEvent{
-		RawType:   msg.Type,
-		SessionID: msg.SessionID,
-		Status:    msg.Status,
-		Error:     msg.Error,
-		IsError:   msg.IsError,
-		RawLine:   line,
+	// Helper to create a base event from common fields
+	newBaseEvent := func(evtType ProviderEventType) *ProviderEvent {
+		return &ProviderEvent{
+			Type:      evtType,
+			RawType:   msg.Type,
+			SessionID: msg.SessionID,
+			Status:    msg.Status,
+			Error:     msg.Error,
+			IsError:   msg.IsError,
+			RawLine:   line,
+			Timestamp: time.Now(),
+		}
 	}
+
+	var events []*ProviderEvent
 
 	// Map Claude Code types to normalized types
 	switch msg.Type {
 	case "result":
-		event.Type = EventTypeResult
+		event := newBaseEvent(EventTypeResult)
 		event.Content = msg.Result
 		if msg.Usage != nil {
+			// Support both "duration" and "duration_ms"
+			dur := msg.Duration
+			if dur == 0 {
+				dur = msg.DurationMs
+			}
 			event.Metadata = &ProviderEventMeta{
-				DurationMs:       int64(msg.Duration),
+				DurationMs:       int64(dur),
+				TotalDurationMs:  int64(dur),
 				InputTokens:      msg.Usage.InputTokens,
 				OutputTokens:     msg.Usage.OutputTokens,
 				CacheWriteTokens: msg.Usage.CacheWriteInputTokens,
@@ -195,252 +200,186 @@ func (p *ClaudeCodeProvider) ParseEvent(line string) (*ProviderEvent, error) {
 				TotalCostUSD:     msg.TotalCostUSD,
 			}
 		}
+		events = append(events, event)
 
 	case "error":
-		event.Type = EventTypeError
+		event := newBaseEvent(EventTypeError)
 		event.Content = msg.Error
+		events = append(events, event)
 
 	case "thinking", "status":
-		// Check for Plan Mode subtype first
-		if msg.Subtype == "plan_generation" {
-			event.Type = EventTypePlanMode
-			p.logger.Info("[PROVIDER] Received plan_mode event from CLI",
-				"has_content", len(msg.Content) > 0,
-				"status", msg.Status,
-				"subtype", msg.Subtype)
-			// Extract plan content from blocks
-			allBlocks := msg.GetContentBlocks()
-			for _, block := range allBlocks {
-				if block.Text != "" {
-					event.Content = block.Text
-					break
+		blocks := msg.GetContentBlocks()
+		if len(blocks) > 0 {
+			for _, block := range blocks {
+				switch block.Type {
+				case "text":
+					if block.Text != "" {
+						ev := newBaseEvent(EventTypeThinking)
+						if msg.Subtype == "plan_generation" {
+							ev.Type = EventTypePlanMode
+						}
+						ev.Content = block.Text
+						events = append(events, ev)
+					}
+				case "tool_use":
+					ev := newBaseEvent(EventTypeToolUse)
+					ev.ToolName = block.Name
+					ev.ToolID = block.ID
+					ev.ToolInput = block.Input
+					events = append(events, ev)
 				}
 			}
-			// Fallback to status field
-			if event.Content == "" && msg.Status != "" {
-				event.Content = msg.Status
+		}
+
+		// Fallback for direct content or status if no blocks were processed
+		if len(events) == 0 {
+			ev := newBaseEvent(EventTypeThinking)
+			if msg.Subtype == "plan_generation" {
+				ev.Type = EventTypePlanMode
 			}
-			return event, nil
-		}
-
-		event.Type = EventTypeThinking
-		p.logger.Info("[PROVIDER] Received thinking event from CLI",
-			"has_content", len(msg.Content) > 0,
-			"status", msg.Status,
-			"subtype", msg.Subtype)
-		// Check both msg.Content (direct) and msg.Message.Content (nested)
-		allBlocks := msg.GetContentBlocks()
-		p.logger.Debug("[PROVIDER] Raw thinking event",
-			"has_direct_content", len(msg.Content) > 0,
-			"has_message_content", msg.Message != nil && len(msg.Message.Content) > 0,
-			"direct_content", msg.Content,
-			"blocks_count", len(allBlocks))
-
-		// Try to extract text from blocks
-		for _, block := range allBlocks {
-			p.logger.Debug("[PROVIDER] Thinking block",
-				"type", block.Type,
-				"text", block.Text)
-			if block.Text != "" {
-				event.Content = block.Text
-				break
+			ev.Content = msg.Status
+			if ev.Content == "" {
+				ev.Content = "Thinking..."
 			}
-		}
-
-		// Fallback 1: Check status field
-		if event.Content == "" && msg.Status != "" {
-			event.Content = msg.Status
-			p.logger.Debug("[PROVIDER] Using status as thinking content", "status", msg.Status)
-		}
-
-		// Fallback 2: Check subtype field
-		if event.Content == "" && msg.Subtype != "" {
-			event.Content = msg.Subtype
-			p.logger.Debug("[PROVIDER] Using subtype as thinking content", "subtype", msg.Subtype)
-		}
-
-		// Final fallback: use generic thinking text
-		if event.Content == "" {
-			event.Content = "Thinking..."
-			p.logger.Debug("[PROVIDER] Using default thinking text")
+			events = append(events, ev)
 		}
 
 	case "tool_use":
-		// Check for special tool types first
+		// Handle special tool types
 		switch msg.Name {
 		case "ExitPlanMode":
-			event.Type = EventTypeExitPlanMode
+			event := newBaseEvent(EventTypeExitPlanMode)
 			event.ToolName = msg.Name
-			p.logger.Info("[PROVIDER] Received exit_plan_mode event from CLI",
-				"has_input", msg.Input != nil)
-			// Extract plan content from input.plan field
 			if msg.Input != nil {
 				if plan, ok := msg.Input["plan"].(string); ok {
 					event.Content = plan
 				}
 			}
-			// Also check content blocks
-			if event.Content == "" {
-				for _, block := range msg.GetContentBlocks() {
-					if block.Text != "" {
-						event.Content = block.Text
-						break
-					}
-				}
-			}
-			return event, nil
-
+			events = append(events, event)
 		case "AskUserQuestion":
-			event.Type = EventTypeAskUserQuestion
+			event := newBaseEvent(EventTypeAskUserQuestion)
 			event.ToolName = msg.Name
-			p.logger.Info("[PROVIDER] Received ask_user_question event from CLI",
-				"has_input", msg.Input != nil)
-			// Extract question and options
 			if msg.Input != nil {
 				if question, ok := msg.Input["question"].(string); ok {
 					event.Content = question
 				}
-				// Store options in ToolInput for downstream processing
 				event.ToolInput = msg.Input
 			}
-			return event, nil
-		}
-
-		// Default tool_use handling
-		event.Type = EventTypeToolUse
-		event.ToolName = msg.Name
-		event.Status = "running"
-		p.logger.Debug("[PROVIDER] Parsed tool_use", "name", msg.Name, "has_blocks", len(msg.GetContentBlocks()) > 0)
-		for _, block := range msg.GetContentBlocks() {
-			if block.Type == "tool_use" {
-				event.ToolID = block.ID
-				event.ToolInput = block.Input
-				break
+			events = append(events, event)
+		default:
+			// Normal tool use
+			event := newBaseEvent(EventTypeToolUse)
+			event.ToolName = msg.Name
+			event.ToolInput = msg.Input
+			// Try to get more info from blocks (Message-based format)
+			for _, block := range msg.GetContentBlocks() {
+				if block.Type == "tool_use" {
+					if event.ToolName == "" {
+						event.ToolName = block.Name
+					}
+					if event.ToolID == "" {
+						event.ToolID = block.ID
+					}
+					if event.ToolInput == nil {
+						event.ToolInput = block.Input
+					}
+				}
 			}
+			events = append(events, event)
 		}
 
 	case "tool_result":
-		event.Type = EventTypeToolResult
-		event.Status = "success"
+		event := newBaseEvent(EventTypeToolResult)
 		event.Content = msg.Output
-		p.logger.Debug("[PROVIDER] Parsed tool_result",
-			"output_len", len(msg.Output),
-			"has_blocks", len(msg.GetContentBlocks()) > 0,
-			"name", msg.Name) // Check if name is in the message itself
+		event.ToolID = msg.MessageID // Some use MessageID for result
+		event.ToolName = msg.Name
 
-		// Extract tool info from content blocks
 		for _, block := range msg.GetContentBlocks() {
-			p.logger.Debug("[PROVIDER] tool_result block",
-				"type", block.Type,
-				"name", block.Name,
-				"id", block.ID)
 			if block.Type == "tool_result" {
-				event.ToolID = block.GetUnifiedToolID()
-				if block.Name != "" {
+				if event.ToolID == "" {
+					event.ToolID = block.GetUnifiedToolID()
+				}
+				if event.ToolName == "" {
 					event.ToolName = block.Name
 				}
-				event.IsError = block.IsError
-				if event.IsError {
-					event.Status = "error"
+				if event.Content == "" {
+					event.Content = block.Content
 				}
-				break
+				if block.IsError {
+					event.Status = "error"
+					event.IsError = true
+				}
 			}
 		}
-
-		// Fallback: use msg.Name if block didn't have it
-		if event.ToolName == "" && msg.Name != "" {
-			event.ToolName = msg.Name
-			p.logger.Debug("[PROVIDER] Using msg.Name as tool_name", "name", msg.Name)
+		if event.Status == "" {
+			event.Status = "success"
 		}
-
-		// Final fallback: try to extract tool name from content
-		if event.ToolName == "" && event.Content != "" {
-			// Try to detect tool type from content
-			content := event.Content
-			if len(content) > 100 {
-				content = content[:100]
-			}
-			p.logger.Debug("[PROVIDER] Could not extract tool_name", "content_preview", content)
-		}
+		events = append(events, event)
 
 	case "assistant", "message", "content", "text", "delta":
-		event.Type = EventTypeAnswer
-		for _, block := range msg.GetContentBlocks() {
-			if block.Type == "text" && block.Text != "" {
-				event.Content = block.Text
-				event.Blocks = append(event.Blocks, ProviderContentBlock{
-					Type: block.Type,
-					Text: block.Text,
-				})
-			} else if block.Type == "tool_use" {
-				// Embedded tool use in assistant message
-				event.Blocks = append(event.Blocks, ProviderContentBlock{
-					Type:  block.Type,
-					Name:  block.Name,
-					ID:    block.ID,
-					Input: block.Input,
-				})
+		// Multi-part messages
+		blocks := msg.GetContentBlocks()
+		for _, block := range blocks {
+			switch block.Type {
+			case "text":
+				if block.Text != "" {
+					ev := newBaseEvent(EventTypeAnswer)
+					ev.Content = block.Text
+					events = append(events, ev)
+				}
+			case "tool_use":
+				ev := newBaseEvent(EventTypeToolUse)
+				ev.ToolName = block.Name
+				ev.ToolID = block.ID
+				ev.ToolInput = block.Input
+				events = append(events, ev)
+			case "tool_result":
+				ev := newBaseEvent(EventTypeToolResult)
+				ev.ToolName = block.Name
+				ev.ToolID = block.GetUnifiedToolID()
+				ev.Content = block.Content
+				if block.IsError {
+					ev.Status = "error"
+					ev.IsError = true
+				} else {
+					ev.Status = "success"
+				}
+				events = append(events, ev)
 			}
 		}
-
-	case "system":
-		event.Type = EventTypeSystem
-		// System messages are typically filtered out
-
-	case "user":
-		event.Type = EventTypeUser
-		// Extract tool results from user message reflections
-		for _, block := range msg.GetContentBlocks() {
-			if block.Type == "tool_result" {
-				event.Type = EventTypeToolResult
-				event.ToolID = block.GetUnifiedToolID()
-				event.ToolName = block.Name
-				event.Content = block.Content
-				break
-			}
+		// Fallback for direct text
+		if len(events) == 0 && msg.Result != "" {
+			ev := newBaseEvent(EventTypeAnswer)
+			ev.Content = msg.Result
+			events = append(events, ev)
 		}
 
 	case "permission_request":
-		event.Type = EventTypePermissionRequest
-		event.SessionID = msg.SessionID
-		// Store permission info in existing fields
+		event := newBaseEvent(EventTypePermissionRequest)
 		if msg.Permission != nil {
 			event.ToolName = msg.Permission.Name
 			event.Content = msg.Permission.Input
 		}
 		if msg.Decision != nil {
-			// Use ToolID to store message_id for correlation
 			event.ToolID = msg.MessageID
-			// Prepend decision reason to content if available
 			if msg.Decision.Reason != "" {
-				if event.Content != "" {
-					event.Content = msg.Decision.Reason + "\n" + event.Content
-				} else {
-					event.Content = msg.Decision.Reason
-				}
+				event.Content = msg.Decision.Reason + "\n" + event.Content
 			}
 		}
-		// Store raw line for full permission data access
-		event.RawLine = line
-		p.logger.Info("[PROVIDER] Permission request received",
-			"session_id", msg.SessionID,
-			"message_id", msg.MessageID,
-			"tool_name", event.ToolName,
-			"has_permission", msg.Permission != nil,
-			"has_decision", msg.Decision != nil)
+		events = append(events, event)
 
 	default:
-		// Unknown type, try to extract text content
-		event.Type = EventTypeAnswer
+		// Fallback for unknown types - try to extract ANY text
 		for _, block := range msg.GetContentBlocks() {
 			if block.Type == "text" && block.Text != "" {
-				event.Content = block.Text
-				break
+				ev := newBaseEvent(EventTypeAnswer)
+				ev.Content = block.Text
+				events = append(events, ev)
 			}
 		}
 	}
 
-	return event, nil
+	return events, nil
 }
 
 // DetectTurnEnd checks if the event signals turn completion.

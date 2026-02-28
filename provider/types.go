@@ -15,7 +15,8 @@ type StreamMessage struct {
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	Content      []ContentBlock    `json:"content,omitempty"`
-	Duration     int               `json:"duration_ms,omitempty"`
+	Duration     int               `json:"duration,omitempty"`    // Claude Code often uses "duration"
+	DurationMs   int               `json:"duration_ms,omitempty"` // Some versions/providers use "duration_ms"
 	Subtype      string            `json:"subtype,omitempty"`
 	IsError      bool              `json:"is_error,omitempty"`
 	TotalCostUSD float64           `json:"total_cost_usd,omitempty"`
