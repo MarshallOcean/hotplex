@@ -390,15 +390,47 @@ func (c *StreamCallback) scheduleDeleteStartingMessage() {
 	})
 }
 
-// trackActionMessage records an action zone message for later cleanup
+// maxActionMessages is the maximum number of action zone messages visible in Slack.
+// When exceeded, oldest messages are deleted immediately (sliding window effect).
+const maxActionMessages = 3
+
+// trackActionMessage records an action zone message and enforces sliding window.
+// When the number of tracked messages exceeds maxActionMessages, the oldest
+// messages are deleted via Slack API immediately for a fixed-size window effect.
 func (c *StreamCallback) trackActionMessage(msg *base.ChatMessage) {
 	if msg.Metadata == nil {
 		return
 	}
 	ts, _ := msg.Metadata["message_ts"].(string)
 	ch, _ := msg.Metadata["channel_id"].(string)
-	if ts != "" && ch != "" {
-		c.actionMsgRecords = append(c.actionMsgRecords, msgRecord{ChannelID: ch, MessageTS: ts})
+	if ts == "" || ch == "" {
+		return
+	}
+	c.actionMsgRecords = append(c.actionMsgRecords, msgRecord{ChannelID: ch, MessageTS: ts})
+
+	// Sliding window: delete oldest messages when exceeding limit
+	if len(c.actionMsgRecords) > maxActionMessages {
+		excess := len(c.actionMsgRecords) - maxActionMessages
+		toDelete := make([]msgRecord, excess)
+		copy(toDelete, c.actionMsgRecords[:excess])
+		c.actionMsgRecords = c.actionMsgRecords[excess:]
+
+		// Delete old messages in background (best-effort)
+		go func() {
+			adapter, ok := c.adapters.GetAdapter(c.platform)
+			if !ok {
+				return
+			}
+			sa, ok := adapter.(*slack.Adapter)
+			if !ok {
+				return
+			}
+			for _, rec := range toDelete {
+				if err := sa.DeleteMessageSDK(context.Background(), rec.ChannelID, rec.MessageTS); err != nil {
+					c.logger.Debug("Sliding window: failed to delete old action message", "ts", rec.MessageTS, "error", err)
+				}
+			}
+		}()
 	}
 }
 
