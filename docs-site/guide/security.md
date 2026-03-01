@@ -4,7 +4,7 @@
 
 HotPlex implements defense-in-depth security with multiple layers:
 
-![Security Layers](/images/security-layers.svg)
+![Security Model](/images/hotplex-security.svg)
 
 ---
 

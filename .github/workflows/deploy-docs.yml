@@ -7,6 +7,7 @@ on:
       - 'v*'
     paths:
       - 'docs-site/**'
+      - 'docs/images/**'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
@@ -46,6 +47,11 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+
+      - name: Sync Images from docs/images (SSOT)
+        run: |
+          rm -rf docs-site/public/images
+          cp -r docs/images docs-site/public/images
 
       - name: Install dependencies
         working-directory: docs-site

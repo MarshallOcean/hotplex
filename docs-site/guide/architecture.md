@@ -27,7 +27,7 @@ User Message → Access Layer → Engine Layer → Process Layer → Response
 
 ## Architecture Overview
 
-![Architecture Flow](/images/architecture-flow.svg)
+![Architecture Overview](/images/topology.svg)
 
 ### Layer Responsibilities
 
@@ -91,7 +91,7 @@ A session transitions through states:
 
 ## Security Layers
 
-![Security Layers](/images/security-layers.svg)
+![Security Model](/images/hotplex-security.svg)
 
 HotPlex implements defense in depth:
 
