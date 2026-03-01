@@ -122,7 +122,7 @@ main() {
             [ -e "$svg_file" ] || continue
             local filename=$(basename "$svg_file" .svg)
             convert_svg "$svg_file" "${OUTPUT_DIR}/${filename}.png"
-            ((total++))
+            total=$((total + 1))
         done
         echo ""
     fi
