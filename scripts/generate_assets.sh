@@ -25,13 +25,11 @@ echo "3/4: 生成多尺寸 favicon.ico..."
 magick -background none $OUTPUT_DIR/hotplex-logo.png -define icon:auto-resize=256,128,64,48,32,16 $OUTPUT_DIR/favicon.ico
 
 echo "4/4: 同步到文档站点演示目录..."
-# 同步 SVG
+# 同步源 SVG 到 public 根目录 (用于 site logo)
 cp $SVG_SOURCE $DOCS_PUBLIC/logo.svg
-cp $SVG_SOURCE $DOCS_ASSETS/hotplex-logo.svg
 
 # 同步 favicon 和 社交预览图
 cp $OUTPUT_DIR/favicon.ico $DOCS_PUBLIC/favicon.ico
-cp $OUTPUT_DIR/favicon.ico $DOCS_ASSETS/favicon.ico
 cp $OUTPUT_DIR/hotplex-og.png $DOCS_ASSETS/hotplex-og.png
 
-echo "完成！资产已基于 SSOT ($SVG_SOURCE) 重新生成并同步到所有目录。"
+echo "完成！资产已基于 SSOT ($SVG_SOURCE) 重新生成并同步。"

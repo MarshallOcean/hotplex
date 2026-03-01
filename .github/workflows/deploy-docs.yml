@@ -50,8 +50,8 @@ jobs:
 
       - name: Sync Images from docs/images (SSOT)
         run: |
-          rm -rf docs-site/public/images
-          cp -r docs/images docs-site/public/images
+          mkdir -p docs-site/public/images
+          cp -rp docs/images/* docs-site/public/images/
 
       - name: Install dependencies
         working-directory: docs-site

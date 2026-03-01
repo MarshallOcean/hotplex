@@ -7,9 +7,15 @@ export default defineConfig({
   base: '/hotplex/',
 
   head: [
-    ['link', { rel: 'icon', href: '/hotplex/logo.svg' }],
+    ['link', { rel: 'icon', href: '/hotplex/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#00ADD8' }],
     ['meta', { name: 'google', content: 'notranslate' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:title', content: 'HotPlex - Strategic Bridge for AI Agent Engineering' }],
+    ['meta', { property: 'og:description', content: 'Stateful, Secure, and High-Performance Agent Infrastructure.' }],
+    ['meta', { property: 'og:image', content: 'https://hrygo.github.io/hotplex/assets/hotplex-og.png' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: 'https://hrygo.github.io/hotplex/assets/hotplex-og.png' }],
   ],
 
   themeConfig: {
