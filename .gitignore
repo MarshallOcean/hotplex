@@ -60,8 +60,9 @@ release_notes_*.txt
 # Worktrees
 .worktrees/
 
-# Generated PNG assets (use svg2png.sh to regenerate)
+# Generated PNG assets (Optional/Manual via svg2png.sh)
 docs/images/png/
+
 
 # Documentation Site (Generated)
 .loki

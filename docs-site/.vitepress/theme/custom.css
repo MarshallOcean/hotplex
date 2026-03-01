@@ -1,0 +1,83 @@
+:root {
+  --vp-c-brand-1: #646cff;
+  --vp-c-brand-2: #535bf2;
+  --vp-c-brand-3: #747bff;
+  --vp-c-brand-soft: rgba(100, 108, 255, 0.1);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #646cff 10%, #ff4694 100%);
+}
+
+.dark {
+  --vp-c-brand-1: #9499ff;
+  --vp-c-brand-2: #747bff;
+  --vp-c-brand-3: #b0b4ff;
+}
+
+/* Premium Typography */
+body {
+  font-family: "Inter", "system-ui", "-apple-system", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Feature Card Enhancements */
+.VPFeature {
+  border: 1px solid var(--vp-c-bg-soft);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -10px var(--vp-c-brand-soft);
+}
+
+/* Custom Audience Sections */
+.audience-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 48px;
+  justify-content: center;
+}
+
+.audience-card {
+  flex: 1;
+  min-width: 280px;
+  max-width: 400px;
+  padding: 32px;
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.audience-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-mute);
+}
+
+.audience-card h3 {
+  margin-top: 0;
+  color: var(--vp-c-brand-1);
+}
+
+.audience-card p {
+  font-size: 0.95em;
+  opacity: 0.8;
+}
+
+.audience-btn {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--vp-c-brand-1);
+  color: white !important;
+  font-weight: 600;
+  text-decoration: none !important;
+}
+
+.audience-btn:hover {
+  background: var(--vp-c-brand-2);
+}

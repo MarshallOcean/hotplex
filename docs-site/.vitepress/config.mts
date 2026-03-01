@@ -17,85 +17,73 @@ export default defineConfig({
     siteTitle: 'HotPlex',
 
     nav: [
-      { text: 'Home', link: '/' },
-      {
-        text: 'Guide',
-        items: [
-          { text: 'Essentials', link: '/guide/getting-started' },
-          { text: 'ChatApps', link: '/guide/chatapps' },
-          { text: 'Providers', link: '/providers/claude' },
-        ]
-      },
-      { text: 'SDKs', link: '/sdks/go-sdk' },
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Ecosystem', link: '/ecosystem/' },
+      { text: 'Reference', link: '/reference/architecture' },
+      { text: 'Blog', link: '/blog/' },
       { text: 'GitHub', link: 'https://github.com/hrygo/hotplex' }
     ],
 
+
     sidebar: {
-      '/': [
+      '/guide/': [
         {
-          text: 'Essentials',
+          text: 'Introduction',
           collapsed: false,
           items: [
             { text: 'Getting Started', link: '/guide/getting-started' },
-            { text: 'Quick Start', link: '/guide/quick-start' },
-            { text: 'Architecture', link: '/guide/architecture' },
+            { text: 'What is HotPlex?', link: '/guide/introduction' },
+          ]
+        },
+        {
+          text: 'Core Concepts',
+          collapsed: false,
+          items: [
+            { text: 'Architecture Overview', link: '/guide/architecture' },
+            { text: 'State Management', link: '/guide/state' },
             { text: 'Hooks System', link: '/guide/hooks' },
           ]
         },
         {
-          text: 'AI Providers',
+          text: 'User Guides',
           collapsed: false,
           items: [
-            { text: 'Claude Code', link: '/providers/claude' },
-            { text: 'OpenCode', link: '/providers/opencode' },
-          ]
-        },
-        {
-          text: 'Connectivity',
-          collapsed: false,
-          items: [
-            { text: 'WebSocket', link: '/guide/websocket' },
-          ]
-        },
-        {
-          text: 'ChatApps Ecosystem',
-          collapsed: true,
-          items: [
-            { text: 'Overview', link: '/guide/chatapps' },
+            { text: 'ChatApps Overview', link: '/guide/chatapps' },
             { text: 'Slack Integration', link: '/guide/chatapps-slack' },
-            { text: 'DingTalk', link: '/guide/chatapps-dingtalk' },
+            { text: 'Observability', link: '/guide/observability' },
+            { text: 'Production Deployment', link: '/guide/deployment' },
+          ]
+        }
+      ],
+      '/reference/': [
+        {
+          text: 'Development Reference',
+          items: [
+            { text: 'System Architecture', link: '/reference/architecture' },
+            { text: 'API Reference', link: '/reference/api' },
+            { text: 'Protocol Specification', link: '/reference/protocol' },
+            { text: 'Hooks API', link: '/reference/hooks-api' },
           ]
         },
         {
-          text: 'SDK Reference',
-          collapsed: true,
+          text: 'SDKs',
           items: [
             { text: 'Go SDK', link: '/sdks/go-sdk' },
             { text: 'Python SDK', link: '/sdks/python-sdk' },
             { text: 'TypeScript SDK', link: '/sdks/typescript-sdk' },
-            { text: 'API Reference', link: '/reference/api' },
           ]
-        },
+        }
+      ],
+      '/blog/': [
         {
-          text: 'Engineering & Operations',
-          collapsed: true,
+          text: 'Updates & Engineering',
           items: [
-            { text: 'Observability', link: '/guide/observability' },
-            { text: 'Docker Execution', link: '/guide/docker' },
-            { text: 'Production Guide', link: '/guide/deployment' },
-            { text: 'Performance', link: '/guide/performance' },
-          ]
-        },
-        {
-          text: 'Meta & Analysis',
-          collapsed: true,
-          items: [
-            { text: 'Technical Plan', link: '/plan/technical-plan' },
+            { text: 'Latest Updates', link: '/blog/' },
+            { text: 'Roadmap 2026', link: '/blog/roadmap-2026' },
           ]
         }
       ]
     },
-
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/hrygo/hotplex' }
@@ -124,3 +112,4 @@ export default defineConfig({
     }
   }
 })
+
