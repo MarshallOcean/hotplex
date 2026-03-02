@@ -102,12 +102,29 @@ func TestBuildSessionStatsMessage_WithAllFields(t *testing.T) {
 	assert.NotNil(t, blocks)
 	assert.Len(t, blocks, 1)
 
-	// Verify the stats line contains expected emojis
+	// Verify the stats line contains expected emojis and values
 	contextBlock, ok := blocks[0].(*slack.ContextBlock)
-	if ok {
-		assert.NotNil(t, contextBlock)
-		// The block should contain duration, tokens, files, and tools
-	}
+	assert.True(t, ok)
+	assert.NotNil(t, contextBlock)
+
+	// Verify context block contains single text element with all stats joined by " • "
+	assert.Len(t, contextBlock.ContextElements.Elements, 1)
+
+	textElem, ok := contextBlock.ContextElements.Elements[0].(*slack.TextBlockObject)
+	assert.True(t, ok)
+
+	// Check all expected stats are present in the text
+	assert.Contains(t, textElem.Text, "⏱️")
+	assert.Contains(t, textElem.Text, "12.50s")
+
+	assert.Contains(t, textElem.Text, "⚡")
+	assert.Contains(t, textElem.Text, "1.2K/350")
+
+	assert.Contains(t, textElem.Text, "📝")
+	assert.Contains(t, textElem.Text, "2 files")
+
+	assert.Contains(t, textElem.Text, "🔧")
+	assert.Contains(t, textElem.Text, "3 tools")
 }
 
 func TestExtractInt64(t *testing.T) {

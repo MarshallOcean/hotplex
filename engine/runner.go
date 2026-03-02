@@ -408,7 +408,14 @@ func (r *Engine) handleStreamRawLine(line string, cfg *types.Config, stats *Sess
 
 	// Diagnostic: log raw CLI JSON types for protocol analysis
 	for _, p := range pevtSlice {
-		r.logger.Debug("[RUNNER] parsed raw line", "raw_type", p.RawType, "normalized_type", p.Type, "tool_name", p.ToolName)
+		if p.Type == provider.EventTypeResult {
+			r.logger.Debug("[RUNNER] result event metadata",
+				"input_tokens", p.Metadata.InputTokens,
+				"output_tokens", p.Metadata.OutputTokens,
+				"raw_line", p.RawLine)
+		} else {
+			r.logger.Debug("[RUNNER] parsed raw line", "raw_type", p.RawType, "normalized_type", p.Type, "tool_name", p.ToolName)
+		}
 	}
 
 	for _, pevt := range pevtSlice {
@@ -488,6 +495,8 @@ func (r *Engine) handleNormalizedResult(pevt *provider.ProviderEvent, stats *Ses
 		"namespace", r.opts.Namespace,
 		"session_id", cfg.SessionID,
 		"duration_ms", stats.TotalDurationMs,
+		"input_tokens", stats.InputTokens,
+		"output_tokens", stats.OutputTokens,
 		"cost_usd", costUSD)
 
 	// Dispatch stats event

@@ -83,6 +83,51 @@ func TestClaudeCodeProvider_ExhaustiveParsing(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:     "result_with_full_usage",
+			json:     `{"type": "result", "result": "Task completed", "duration_ms": 2000, "usage": {"input_tokens": 1200, "output_tokens": 350, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 50}, "total_cost_usd": 0.05}`,
+			wantType: []ProviderEventType{EventTypeResult},
+			check: func(t *testing.T, evts []*ProviderEvent) {
+				if evts[0].Metadata == nil {
+					t.Fatal("Expected non-nil metadata")
+				}
+				if evts[0].Metadata.InputTokens != 1200 {
+					t.Errorf("Expected input_tokens=1200, got %d", evts[0].Metadata.InputTokens)
+				}
+				if evts[0].Metadata.OutputTokens != 350 {
+					t.Errorf("Expected output_tokens=350, got %d", evts[0].Metadata.OutputTokens)
+				}
+				if evts[0].Metadata.CacheWriteTokens != 100 {
+					t.Errorf("Expected cache_write_tokens=100, got %d", evts[0].Metadata.CacheWriteTokens)
+				}
+				if evts[0].Metadata.CacheReadTokens != 50 {
+					t.Errorf("Expected cache_read_tokens=50, got %d", evts[0].Metadata.CacheReadTokens)
+				}
+				if evts[0].Metadata.TotalCostUSD != 0.05 {
+					t.Errorf("Expected total_cost_usd=0.05, got %f", evts[0].Metadata.TotalCostUSD)
+				}
+			},
+		},
+		{
+			name:     "result_without_usage",
+			json:     `{"type": "result", "result": "Done", "duration_ms": 1000}`,
+			wantType: []ProviderEventType{EventTypeResult},
+			check: func(t *testing.T, evts []*ProviderEvent) {
+				if evts[0].Metadata == nil {
+					t.Fatal("Expected non-nil metadata even without usage")
+				}
+				if evts[0].Metadata.TotalDurationMs != 1000 {
+					t.Errorf("Expected duration=1000, got %d", evts[0].Metadata.TotalDurationMs)
+				}
+				// Tokens should be 0 when usage is not provided
+				if evts[0].Metadata.InputTokens != 0 {
+					t.Errorf("Expected input_tokens=0, got %d", evts[0].Metadata.InputTokens)
+				}
+				if evts[0].Metadata.OutputTokens != 0 {
+					t.Errorf("Expected output_tokens=0, got %d", evts[0].Metadata.OutputTokens)
+				}
+			},
+		},
 	}
 
 	for _, tc := range exhaustiveCases {

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src=".github/assets/hotplex-og.png" alt="hotplex" width="160"/>
+  <img src="docs/images/hotplex_beaver_banner.webp" alt="hotplex" width="100%"/>
   <h1>hotplex</h1>
   <p><b>Transforming AI CLI Agents into Production-Ready Interactive Services</b></p>
   <p><i>Break the limits of one-off CLI tasks. Leverage full-duplex, stateful sessions for instant interaction, secure isolation, and effortless system integration.</i></p>

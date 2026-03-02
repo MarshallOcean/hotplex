@@ -184,21 +184,25 @@ func (p *ClaudeCodeProvider) ParseEvent(line string) ([]*ProviderEvent, error) {
 	case "result":
 		event := newBaseEvent(EventTypeResult)
 		event.Content = msg.Result
+		// Always create metadata for result events to ensure tokens are tracked
+		dur := msg.Duration
+		if dur == 0 {
+			dur = msg.DurationMs
+		}
+		event.Metadata = &ProviderEventMeta{
+			DurationMs:      int64(dur),
+			TotalDurationMs: int64(dur),
+			TotalCostUSD:    msg.TotalCostUSD,
+		}
+		// Extract tokens if usage is available
 		if msg.Usage != nil {
-			// Support both "duration" and "duration_ms"
-			dur := msg.Duration
-			if dur == 0 {
-				dur = msg.DurationMs
-			}
-			event.Metadata = &ProviderEventMeta{
-				DurationMs:       int64(dur),
-				TotalDurationMs:  int64(dur),
-				InputTokens:      msg.Usage.InputTokens,
-				OutputTokens:     msg.Usage.OutputTokens,
-				CacheWriteTokens: msg.Usage.CacheWriteInputTokens,
-				CacheReadTokens:  msg.Usage.CacheReadInputTokens,
-				TotalCostUSD:     msg.TotalCostUSD,
-			}
+			event.Metadata.InputTokens = msg.Usage.InputTokens
+			event.Metadata.OutputTokens = msg.Usage.OutputTokens
+			event.Metadata.CacheWriteTokens = msg.Usage.CacheWriteInputTokens
+			event.Metadata.CacheReadTokens = msg.Usage.CacheReadInputTokens
+		} else {
+			// Debug: log that usage is missing
+			fmt.Printf("[PROVIDER] result event missing usage data: %s\n", line)
 		}
 		events = append(events, event)
 
