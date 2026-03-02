@@ -587,13 +587,12 @@ func (b *MessageBuilder) BuildDangerBlockMessage(msg *base.ChatMessage) []slack.
 func (b *MessageBuilder) BuildSessionStatsMessage(msg *base.ChatMessage) []slack.Block {
 	var blocks []slack.Block
 
-	// Header: ✅ Turn Complete (per spec 6)
-	headerText := slack.NewTextBlockObject("mrkdwn", ":white_check_mark: *Turn Complete*", false, false)
-	blocks = append(blocks, slack.NewSectionBlock(headerText, nil, nil))
-
-	// Build compact stats line: ⏱️ duration • ⚡ tokens in/out • 📝 files • 🔧 tools
+	// Build compact stats line: Turn Complete • ⏱️ duration • ⚡ tokens in/out • 📝 files • 🔧 tools
 	if msg.Metadata != nil {
 		var stats []string
+
+		// Add "Turn Complete" indicator at the beginning
+		stats = append(stats, "✓ Turn Complete")
 
 		// Total Duration (from total_duration_ms in SessionStats.ToSummary)
 		if duration := extractInt64(msg.Metadata, "total_duration_ms"); duration > 0 {
@@ -676,9 +675,9 @@ func (b *MessageBuilder) BuildCommandProgressMessage(msg *base.ChatMessage) []sl
 		}
 	}
 
-	headerText := ":gear: *" + commandName + "*"
+	headerText := "⚙️ " + commandName
 	if commandName == "" {
-		headerText = ":gear: *Command Progress*"
+		headerText = "⚙️ Executing"
 	}
 
 	mrkdwn := slack.NewTextBlockObject("mrkdwn", headerText+"\n"+title, false, false)
@@ -739,9 +738,9 @@ func (b *MessageBuilder) BuildCommandCompleteMessage(msg *base.ChatMessage) []sl
 		}
 	}
 
-	headerText := ":white_check_mark: *" + commandName + " Complete*"
+	headerText := "✓ " + commandName + " Complete"
 	if commandName == "" {
-		headerText = ":white_check_mark: *Command Complete*"
+		headerText = "✓ Command Complete"
 	}
 
 	mrkdwn := slack.NewTextBlockObject("mrkdwn", headerText+"\n"+title, false, false)
@@ -777,7 +776,7 @@ func (b *MessageBuilder) BuildSystemMessage(msg *base.ChatMessage) []slack.Block
 	}
 
 	// Use context block per spec for low visual weight
-	text := slack.NewTextBlockObject("mrkdwn", ":gear: System: "+content, false, false)
+	text := slack.NewTextBlockObject("mrkdwn", "System: "+content, false, false)
 	return []slack.Block{
 		slack.NewContextBlock("", text),
 	}
@@ -802,7 +801,7 @@ func (b *MessageBuilder) BuildUserMessage(msg *base.ChatMessage) []slack.Block {
 	}
 
 	// Use section + context per spec
-	text := ":bust_in_silhouette: *User:*\n" + content
+	text := "User: " + content
 	mrkdwn := slack.NewTextBlockObject("mrkdwn", text, false, false)
 
 	var blocks []slack.Block
@@ -842,7 +841,7 @@ func (b *MessageBuilder) BuildStepStartMessage(msg *base.ChatMessage) []slack.Bl
 	}
 
 	// Per spec: section block with step info
-	text := fmt.Sprintf(":arrow_right: *Step %d/%d:*\n%s", stepNum, totalSteps, content)
+	text := fmt.Sprintf("Step %d/%d: %s", stepNum, totalSteps, content)
 	mrkdwn := slack.NewTextBlockObject("mrkdwn", text, false, false)
 	section := slack.NewSectionBlock(mrkdwn, nil, nil)
 
@@ -886,7 +885,7 @@ func (b *MessageBuilder) BuildStepFinishMessage(msg *base.ChatMessage) []slack.B
 	}
 
 	// Use section + context per spec
-	text := fmt.Sprintf(":white_check_mark: *Step %d/%d Complete*\n%s", stepNum, totalSteps, content)
+	text := fmt.Sprintf("✓ Step %d/%d Complete: %s", stepNum, totalSteps, content)
 	mrkdwn := slack.NewTextBlockObject("mrkdwn", text, false, false)
 
 	var blocks []slack.Block
@@ -961,7 +960,11 @@ func (b *MessageBuilder) BuildSessionStartMessage(msg *base.ChatMessage) []slack
 
 	// Add session ID with prefix
 	if sessionID != "" {
-		sessionText := slack.NewTextBlockObject("mrkdwn", " •  Session: `"+sessionID+"`", false, false)
+		displayID := sessionID
+		if len(displayID) > 8 {
+			displayID = displayID[:8]
+		}
+		sessionText := slack.NewTextBlockObject("mrkdwn", " •  Session: "+displayID, false, false)
 		contextElems = append(contextElems, sessionText)
 	}
 
@@ -1012,7 +1015,7 @@ func (b *MessageBuilder) BuildUserMessageReceivedMessage(msg *base.ChatMessage) 
 
 // BuildPlanApprovedBlock builds blocks to show after plan is approved
 func (b *MessageBuilder) BuildPlanApprovedBlock() []slack.Block {
-	text := slack.NewTextBlockObject("mrkdwn", "✅ *Plan Approved*\n\nClaude is now executing the plan...", false, false)
+	text := slack.NewTextBlockObject("mrkdwn", "✓ Plan Approved\n\nClaude is now executing...", false, false)
 	return []slack.Block{
 		slack.NewSectionBlock(text, nil, nil),
 	}
@@ -1020,7 +1023,7 @@ func (b *MessageBuilder) BuildPlanApprovedBlock() []slack.Block {
 
 // BuildPlanCancelledBlock builds blocks to show after plan is cancelled
 func (b *MessageBuilder) BuildPlanCancelledBlock(reason string) []slack.Block {
-	text := slack.NewTextBlockObject("mrkdwn", "❌ *Plan Cancelled*", false, false)
+	text := slack.NewTextBlockObject("mrkdwn", "✕ Plan Cancelled", false, false)
 	blocks := []slack.Block{
 		slack.NewSectionBlock(text, nil, nil),
 	}
@@ -1078,19 +1081,19 @@ func (b *MessageBuilder) BuildPermissionRequestMessageFromChat(msg *base.ChatMes
 
 	// Tool information - per spec: section
 	if tool != "" {
-		toolText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Tool:* `%s`", tool), false, false)
+		toolText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Tool: `%s`", tool), false, false)
 		blocks = append(blocks, slack.NewSectionBlock(toolText, nil, nil))
 	}
 
 	// Command/Action preview - per spec: section
 	if displayInput != "" {
-		cmdText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Command:*\n```\n%s\n```", displayInput), false, false)
+		cmdText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Command:\n```\n%s\n```", displayInput), false, false)
 		blocks = append(blocks, slack.NewSectionBlock(cmdText, nil, nil))
 	}
 
 	// Decision reason (if available)
 	if reason != "" {
-		reasonText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Reason:* %s", reason), false, false)
+		reasonText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Reason: %s", reason), false, false)
 		blocks = append(blocks, slack.NewContextBlock("", []slack.MixedElement{
 			reasonText,
 		}...))
@@ -1098,7 +1101,11 @@ func (b *MessageBuilder) BuildPermissionRequestMessageFromChat(msg *base.ChatMes
 
 	// Session info
 	if sessionID != "" {
-		sessionText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Session: `%s`", sessionID), false, false)
+		displayID := sessionID
+		if len(displayID) > 8 {
+			displayID = displayID[:8]
+		}
+		sessionText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Session: %s", displayID), false, false)
 		blocks = append(blocks, slack.NewContextBlock("", []slack.MixedElement{
 			sessionText,
 		}...))
