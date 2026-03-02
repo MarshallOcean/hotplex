@@ -170,12 +170,26 @@ stop: ## @runtime Stop the running daemon
 		printf "${YELLOW}⚠️  No running daemon found${NC}\n"; \
 	fi
 
-restart: stop build ## @runtime Restart daemon with logs
+restart: build ## @runtime Restart daemon with logs
+	@printf "${YELLOW}🛑 Stopping old daemon (if running)...${NC}\n"
+	@if pgrep -f $(BINARY_NAME) > /dev/null 2>&1; then \
+		pkill -f $(BINARY_NAME); \
+		sleep 1; \
+		if pgrep -f $(BINARY_NAME) > /dev/null 2>&1; then \
+			pkill -9 -f $(BINARY_NAME); \
+		fi; \
+		printf "${GREEN}✅ Old daemon stopped${NC}\n"; \
+	else \
+		printf "${CYAN}ℹ️  No running daemon found (fresh start)${NC}\n"; \
+	fi
 	@mkdir -p $(LOG_DIR)
 	@printf "${PURPLE}🔥 Starting HotPlex Daemon (logs: $(LOG_FILE))...${NC}\n"
-	@nohup ./$(DIST_DIR)/$(BINARY_NAME) > $(LOG_FILE) 2>&1 &
-	@printf "${GREEN}✅ Daemon started in background with PID: $$(pgrep -f $(BINARY_NAME))${NC}\n"
-	@printf "${CYAN}📋 Tailing logs (Ctrl+C to stop tailing, daemon will keep running):${NC}\n"
+	@./$(DIST_DIR)/$(BINARY_NAME) < /dev/null > $(LOG_FILE) 2>&1 &
+	@sleep 0.5
+	@PID=$$(pgrep -f $(BINARY_NAME)); \
+	printf "${GREEN}✅ Daemon started in background with PID: $$PID${NC}\n"; \
+	printf "${CYAN}📋 Tailing logs (Ctrl+C to stop tailing, daemon will keep running):${NC}\n"; \
+	printf "${DIM}💡 Use 'make stop' to stop the daemon${NC}\n"
 	@tail -f $(LOG_FILE)
 
 # =============================================================================
