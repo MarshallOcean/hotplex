@@ -16,13 +16,67 @@ const (
 	feishuMessageAPI = "/open-apis/im/v1/messages"
 )
 
+// doRequest is a helper function to reduce HTTP request boilerplate (DRY)
+func (c *Client) doRequest(ctx context.Context, method, url string, reqBody interface{}, token string, respObj interface{}) error {
+	var req *http.Request
+	var err error
+	
+	if reqBody != nil {
+		bodyBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			return err
+		}
+		req, err = http.NewRequestWithContext(ctx, method, url, bytes.NewReader(bodyBytes))
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, url, nil)
+	}
+	if err != nil {
+		return err
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	
+	if respObj != nil {
+		if err := json.Unmarshal(body, respObj); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// FeishuAPIClient defines the interface for Feishu API operations (SOLID: Dependency Inversion)
+type FeishuAPIClient interface {
+	GetAppTokenWithContext(ctx context.Context) (string, int, error)
+	SendMessage(ctx context.Context, token, chatID, msgType string, content map[string]string) (string, error)
+	SendTextMessage(ctx context.Context, token, chatID, text string) (string, error)
+	SendInteractiveMessage(ctx context.Context, token, chatID, cardJSON string) (string, error)
+}
+
 // Client wraps the Feishu Open API
 type Client struct {
-	appID     string
-	appSecret string
-	logger    *slog.Logger
+	appID      string
+	appSecret  string
+	logger     *slog.Logger
 	httpClient *http.Client
 }
+
+// Ensure Client implements FeishuAPIClient
+var _ FeishuAPIClient = (*Client)(nil)
 
 // NewClient creates a new Feishu API client
 func NewClient(appID, appSecret string, logger *slog.Logger) *Client {
@@ -63,32 +117,9 @@ func (c *Client) GetAppTokenWithContext(ctx context.Context) (string, int, error
 		"app_secret": c.appSecret,
 	}
 	
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", 0, err
-	}
-	
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", 0, err
-	}
-	
-	req.Header.Set("Content-Type", "application/json")
-	
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", 0, ErrTokenFetchFailed
-	}
-	defer func() { _ = resp.Body.Close() }()
-	
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", 0, err
-	}
-	
 	var tokenResp TokenResponse
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", 0, err
+	if err := c.doRequest(ctx, "POST", url, reqBody, "", &tokenResp); err != nil {
+		return "", 0, ErrTokenFetchFailed
 	}
 	
 	if tokenResp.Code != 0 {
@@ -139,33 +170,9 @@ func (c *Client) SendMessage(ctx context.Context, token, chatID, msgType string,
 		Content:   string(contentBytes),
 	}
 	
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-	
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", err
-	}
-	
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", ErrMessageSendFailed
-	}
-	defer func() { _ = resp.Body.Close() }()
-	
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	
 	var msgResp SendMessageResponse
-	if err := json.Unmarshal(body, &msgResp); err != nil {
-		return "", err
+	if err := c.doRequest(ctx, "POST", url, reqBody, token, &msgResp); err != nil {
+		return "", ErrMessageSendFailed
 	}
 	
 	if msgResp.Code != 0 {

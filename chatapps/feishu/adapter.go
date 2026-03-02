@@ -18,8 +18,8 @@ type Adapter struct {
 	sender      *base.SenderWithMutex
 	webhook     *base.WebhookRunner
 	
-	// Feishu API client
-	client *Client
+	// Feishu API client (interface for testability - SOLID: Dependency Inversion)
+	client FeishuAPIClient
 	
 	// Token cache
 	appToken    string
@@ -41,7 +41,7 @@ func NewAdapter(config *Config, logger *slog.Logger, opts ...base.AdapterOption)
 		webhook:     base.NewWebhookRunner(logger),
 	}
 	
-	// Initialize API client
+	// Initialize API client (concrete implementation of FeishuAPIClient)
 	a.client = NewClient(config.AppID, config.AppSecret, logger)
 	
 	// Prepare HTTP handlers
