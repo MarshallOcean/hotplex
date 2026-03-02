@@ -22,7 +22,8 @@ func (c *Client) doRequest(ctx context.Context, method, url string, reqBody inte
 	var err error
 	
 	if reqBody != nil {
-		bodyBytes, err := json.Marshal(reqBody)
+		var bodyBytes []byte
+		bodyBytes, err = json.Marshal(reqBody)
 		if err != nil {
 			return err
 		}
