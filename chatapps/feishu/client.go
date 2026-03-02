@@ -120,11 +120,14 @@ type MessageData struct {
 
 // SendTextMessage sends a text message
 func (c *Client) SendTextMessage(ctx context.Context, token, chatID, text string) (string, error) {
+	return c.SendMessage(ctx, token, chatID, "text", map[string]string{"text": text})
+}
+
+// SendMessage sends a message with specified type and content
+// This is the generic message sending method for extensibility
+func (c *Client) SendMessage(ctx context.Context, token, chatID, msgType string, content map[string]string) (string, error) {
 	url := feishuAPIBase + feishuMessageAPI + "?receive_id_type=chat_id"
 	
-	content := map[string]string{
-		"text": text,
-	}
 	contentBytes, err := json.Marshal(content)
 	if err != nil {
 		return "", err
@@ -132,7 +135,7 @@ func (c *Client) SendTextMessage(ctx context.Context, token, chatID, text string
 	
 	reqBody := SendMessageRequest{
 		ReceiveID: chatID,
-		MsgType:   "text",
+		MsgType:   msgType,
 		Content:   string(contentBytes),
 	}
 	
@@ -171,4 +174,10 @@ func (c *Client) SendTextMessage(ctx context.Context, token, chatID, text string
 	}
 	
 	return msgResp.Data.MessageID, nil
+}
+
+// SendInteractiveMessage sends an interactive card message
+// This is a placeholder for Phase 2 implementation
+func (c *Client) SendInteractiveMessage(ctx context.Context, token, chatID, cardJSON string) (string, error) {
+	return c.SendMessage(ctx, token, chatID, "interactive", map[string]string{"config": cardJSON})
 }

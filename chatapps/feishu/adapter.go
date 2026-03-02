@@ -80,8 +80,8 @@ func (a *Adapter) defaultSender(ctx context.Context, sessionID string, msg *base
 		return ErrMessageSendFailed
 	}
 	
-	// Get access token
-	token, err := a.GetAppToken()
+	// Get access token with context
+	token, err := a.GetAppTokenWithContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -216,6 +216,11 @@ func (a *Adapter) verifySignature(r *http.Request, body []byte) error {
 
 // GetAppToken gets or caches the app access token
 func (a *Adapter) GetAppToken() (string, error) {
+	return a.GetAppTokenWithContext(context.Background())
+}
+
+// GetAppTokenWithContext gets or caches the app access token with context
+func (a *Adapter) GetAppTokenWithContext(ctx context.Context) (string, error) {
 	a.tokenMu.RLock()
 	if a.appToken != "" && time.Now().Add(5*time.Minute).Before(a.tokenExpire) {
 		token := a.appToken
@@ -233,8 +238,8 @@ func (a *Adapter) GetAppToken() (string, error) {
 		return a.appToken, nil
 	}
 	
-	// Fetch new token
-	token, expireIn, err := a.client.GetAppToken()
+	// Fetch new token with context
+	token, expireIn, err := a.client.GetAppTokenWithContext(ctx)
 	if err != nil {
 		return "", err
 	}
