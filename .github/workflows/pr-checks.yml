@@ -29,7 +29,7 @@ jobs:
         env:
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          if ! echo "$BODY" | grep -Eiq "(resolves|fixes|closes|refs|fix)\s+#([0-9]+)"; then
+          if ! echo "$BODY" | grep -Eiq "\*?(resolves|fixes|closes|refs|fix)\*?\s*:?\s*#([0-9]+)"; then
             echo "::error::PR body must contain an issue link"
             echo "Add one of: Resolves #N, Fixes #N, Closes #N, or Refs #N"
             exit 1

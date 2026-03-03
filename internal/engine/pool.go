@@ -165,6 +165,22 @@ func (sm *SessionPool) ListActiveSessions() []*Session {
 	return list
 }
 
+// DeleteMarker removes the HotPlex session marker file, preventing future resumption.
+func (sm *SessionPool) DeleteMarker(providerSessionID string) error {
+	if providerSessionID == "" {
+		return nil
+	}
+	return sm.markerStore.Delete(providerSessionID)
+}
+
+// CleanupSessionFiles proxies the cleanup call to the underlying provider.
+func (sm *SessionPool) CleanupSessionFiles(providerSessionID string, workDir string) error {
+	if sm.provider != nil {
+		return sm.provider.CleanupSession(providerSessionID, workDir)
+	}
+	return nil
+}
+
 // cleanupSessionLocked stops the process and removes from map. Caller must hold lock.
 func (sm *SessionPool) cleanupSessionLocked(sessionID string) error {
 	sess, ok := sm.sessions[sessionID]
@@ -237,7 +253,7 @@ func (sm *SessionPool) startSession(ctx context.Context, sessionID string, cfg S
 		"provider_session_id", providerSessionID,
 	)
 
-	args := sm.buildCLIArgs(providerSessionID, sessLog, prompt, cfg.TaskInstructions)
+	args := sm.buildCLIArgs(providerSessionID, sessLog, prompt, cfg)
 	cmd := exec.CommandContext(sessCtx, sm.cliPath, args...)
 
 	// Clear CLAUDECODE env var to allow nested CLI sessions
@@ -258,15 +274,6 @@ func (sm *SessionPool) startSession(ctx context.Context, sessionID string, cfg S
 	} else {
 		// For absolute paths, also clean to resolve . and .. elements
 		cmd.Dir = filepath.Clean(cfg.WorkDir)
-	}
-	if cfg.WorkDir == "." || !filepath.IsAbs(cfg.WorkDir) {
-		if absPath, err := filepath.Abs(cfg.WorkDir); err == nil {
-			cmd.Dir = absPath
-		} else {
-			cmd.Dir = cfg.WorkDir // Fallback to original if error
-		}
-	} else {
-		cmd.Dir = cfg.WorkDir
 	}
 
 	// Setup process attributes and get job handle (Windows) or zero (Unix)
@@ -345,14 +352,15 @@ func (sm *SessionPool) startSession(ctx context.Context, sessionID string, cfg S
 	return sess, nil
 }
 
-func (sm *SessionPool) buildCLIArgs(providerSessionID string, sessLog *slog.Logger, prompt string, taskInstructions string) []string {
+func (sm *SessionPool) buildCLIArgs(providerSessionID string, sessLog *slog.Logger, prompt string, cfg SessionConfig) []string {
 	// Build ProviderSessionOptions
 	opts := &provider.ProviderSessionOptions{
+		WorkDir:          cfg.WorkDir,
 		PermissionMode:   sm.opts.PermissionMode,
 		AllowedTools:     sm.opts.AllowedTools,
 		DisallowedTools:  sm.opts.DisallowedTools,
 		BaseSystemPrompt: sm.opts.BaseSystemPrompt,
-		TaskInstructions: taskInstructions,
+		TaskInstructions: cfg.TaskInstructions,
 		InitialPrompt:    prompt,
 		SessionID:        providerSessionID,
 	}
@@ -364,6 +372,15 @@ func (sm *SessionPool) buildCLIArgs(providerSessionID string, sessLog *slog.Logg
 		sessLog.Info("Resuming existing persistent CLI session")
 	} else {
 		opts.ProviderSessionID = providerSessionID
+
+		// Critical: Delete stale CLI session file before creating new marker
+		// This prevents "Session ID is already in use" errors when:
+		// - /reset deleted the marker but not the CLI session file (old bug)
+		// - Daemon restart with stale CLI session files on disk
+		if err := sm.provider.CleanupSession(providerSessionID, cfg.WorkDir); err != nil {
+			sessLog.Warn("Failed to cleanup stale CLI session file", "error", err)
+		}
+
 		_ = sm.markerStore.Create(providerSessionID)
 		sessLog.Info("Creating new persistent CLI session")
 	}
