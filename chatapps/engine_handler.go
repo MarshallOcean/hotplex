@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/chatapps/base"
+	"github.com/hrygo/hotplex/chatapps/internal"
 	"github.com/hrygo/hotplex/engine"
 	"github.com/hrygo/hotplex/event"
 	intengine "github.com/hrygo/hotplex/internal/engine"
@@ -226,17 +227,17 @@ type StreamCallback struct {
 	streamState      *StreamState
 	lastStatusUpdate time.Time // Throttle tracker for thinking/status messages
 
-	// Reaction lifecycle state — tracks the user's trigger message for emoji status
-	reactionChannelID string // Channel for reactions (from user msg)
-	reactionMessageTS string // User's message TS for reactions
-	currentReaction   string // Currently active reaction emoji name
-
 	// Cleanup records for sliding window management and final deletion
 	cleanupMsgRecords []msgRecord
 
 	// Platform-specific operations (dependency injection for testability and platform agnosticism)
 	messageOps MessageOperations
 	sessionOps SessionOperations
+	statusMgr  *internal.StatusManager // Status notification manager
+
+	// Native streaming state - platform-agnostic streaming output
+	streamWriter       base.StreamWriter // Platform-agnostic streaming writer
+	streamWriterActive bool              // Whether native streaming is active
 }
 
 // Close releases resources held by the callback
@@ -287,13 +288,11 @@ func NewStreamCallback(
 		sessionOps: sessionOps,
 	}
 
-	// Extract user message coordinates for reaction lifecycle
-	if metadata != nil {
-		if ch, ok := metadata["channel_id"].(string); ok {
-			cb.reactionChannelID = ch
-		}
-		if ts, ok := metadata["message_ts"].(string); ok {
-			cb.reactionMessageTS = ts
+	// Initialize StatusManager if StatusProvider is available
+	if adapters != nil {
+		if statusProvider := adapters.GetStatusProvider(platform); statusProvider != nil {
+			cb.statusMgr = internal.NewStatusManager(statusProvider, logger)
+			logger.Debug("StatusManager initialized", "platform", platform)
 		}
 	}
 
@@ -400,9 +399,7 @@ func (c *StreamCallback) handleThinking(data any) error {
 		"thinking_channel_id", c.thinkingChannelID,
 		"thinking_message_ts", c.thinkingMessageTS)
 
-	// Reaction lifecycle: 📥 → 🧠
 	// Always update reaction state regardless of content (reaction shows processing progress)
-	c.setReaction("brain")
 
 	// Skip empty thinking content if not the first event
 	if thinkingContent == "" && !c.isFirst {
@@ -486,57 +483,20 @@ func (c *StreamCallback) sendMessageAndGetTS(msg *ChatMessage) error {
 	return nil
 }
 
+// buildChatMessage creates a ChatMessage with merged metadata and sends it
+// Helper function to reduce duplication in event handlers
+func (c *StreamCallback) buildChatMessage(msgType base.MessageType, content string, extraMetadata map[string]any) error {
+	msg := &base.ChatMessage{
+		Type:     msgType,
+		Content:  content,
+		Metadata: extraMetadata,
+	}
+	msg.Metadata = c.mergeMetadata(msg.Metadata)
+	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+}
+
 // setReaction sets a reaction on the user's trigger message.
 // Removes previous reaction before adding new one for clean status transitions.
-func (c *StreamCallback) setReaction(emoji string) {
-	c.logger.Debug("setReaction called",
-		"emoji", emoji,
-		"reactionChannelID", c.reactionChannelID,
-		"reactionMessageTS", c.reactionMessageTS,
-		"messageOps", fmt.Sprintf("%T", c.messageOps),
-		"currentReaction", c.currentReaction)
-
-	if c.reactionChannelID == "" || c.reactionMessageTS == "" {
-		c.logger.Warn("setReaction: missing reaction coordinates, skipping")
-		return
-	}
-
-	// Use injected message operations interface (no type assertion needed)
-	if c.messageOps == nil {
-		c.logger.Warn("setReaction: message operations not supported on this platform", "platform", c.platform)
-		return
-	}
-
-	c.mu.Lock()
-	prevReaction := c.currentReaction
-	if prevReaction == emoji {
-		c.mu.Unlock()
-		return
-	}
-	c.mu.Unlock()
-
-	// Remove previous reaction (ignore errors — may not exist)
-	if prevReaction != "" {
-		_ = c.messageOps.RemoveReaction(c.ctx, base.Reaction{
-			Name:      prevReaction,
-			Channel:   c.reactionChannelID,
-			Timestamp: c.reactionMessageTS,
-		})
-	}
-
-	// Add new reaction
-	if err := c.messageOps.AddReaction(c.ctx, base.Reaction{
-		Name:      emoji,
-		Channel:   c.reactionChannelID,
-		Timestamp: c.reactionMessageTS,
-	}); err == nil {
-		c.mu.Lock()
-		c.currentReaction = emoji
-		c.mu.Unlock()
-	} else {
-		c.logger.Warn("Failed to set reaction", "emoji", emoji, "error", err)
-	}
-}
 
 // trackMessage records a message for sliding window management and final cleanup.
 func (c *StreamCallback) trackMessage(msg *base.ChatMessage) {
@@ -668,10 +628,62 @@ func (c *StreamCallback) scheduleDeleteActionMessages() {
 }
 
 // updateStatusMessage updates the status indicator message in-place
-// It sends a base.ChatMessage with the appropriate MessageType
-// The Adapter's MessageBuilder will handle conversion to platform-specific blocks
+// It uses StatusManager if available, otherwise falls back to bubble message
 func (c *StreamCallback) updateStatusMessage(statusType base.MessageType, displayText string) error {
+	// If StatusManager is available, use it
+	if c.statusMgr != nil {
+		return c.updateStatusMessageViaManager(statusType, displayText)
+	}
+
+	// Fallback to legacy bubble message logic
+	return c.updateStatusMessageLegacy(statusType, displayText)
+}
+
+// updateStatusMessageViaManager uses StatusManager for status notifications
+func (c *StreamCallback) updateStatusMessageViaManager(statusType base.MessageType, displayText string) error {
+	// Convert MessageType to StatusType
+	status := base.MessageTypeToStatusType(statusType)
+
+	// Get channel and thread info from metadata
 	c.mu.Lock()
+	channelID, _ := c.metadata["channel_id"].(string)
+	threadTS, _ := c.metadata["thread_ts"].(string)
+
+	// Throttle repetitive status updates
+	// Note: StatusManager also handles deduplication internally
+	if c.currentStatus == statusType && time.Since(c.lastStatusUpdate) < time.Second {
+		c.mu.Unlock()
+		return nil
+	}
+	c.lastStatusUpdate = time.Now()
+
+	// Update local status tracking
+	if c.isFirst {
+		c.isFirst = false
+	}
+	c.currentStatus = statusType
+	c.mu.Unlock()
+
+	// Use StatusManager for status notification (handles deduplication internally)
+	err := c.statusMgr.Notify(c.ctx, channelID, threadTS, status, displayText)
+	if err != nil {
+		c.logger.Warn("StatusManager Notify failed", "error", err, "status", status)
+		// Don't return error - StatusManager handles fallback internally
+	}
+	return nil
+}
+
+// updateStatusMessageLegacy is the original bubble message implementation
+// Used as fallback when StatusManager is not available
+func (c *StreamCallback) updateStatusMessageLegacy(statusType base.MessageType, displayText string) error {
+	c.mu.Lock()
+	// If native streaming is active, suppress legacy thinking bubble
+	if c.streamWriterActive && statusType == base.MessageTypeThinking {
+		c.logger.Debug("Native streaming active, suppressing thinking bubble")
+		c.mu.Unlock()
+		return nil
+	}
+
 	// Skip if status hasn't changed (avoid redundant updates)
 	if c.currentStatus == statusType && statusType != base.MessageTypeThinking {
 		c.mu.Unlock()
@@ -794,9 +806,6 @@ func (c *StreamCallback) handleToolUse(data any) error {
 		}
 	}
 
-	// Reaction lifecycle: 🧠 → 🔨
-	c.setReaction("hammer_and_wrench")
-
 	// Update status indicator to show current tool being used
 	if err := c.updateStatusMessage(base.MessageTypeToolUse, toolName); err != nil {
 		c.logger.Warn("Failed to update status for tool_use", "error", err)
@@ -804,24 +813,14 @@ func (c *StreamCallback) handleToolUse(data any) error {
 
 	c.logger.Debug("Sending tool use message", "tool_name", toolName, "input_len", len(input))
 
-	// Send tool use message with platform-agnostic MessageType
-	// The Adapter's MessageBuilder will convert to platform-specific blocks
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeToolUse,
-		Content: toolName,
-		Metadata: map[string]any{
-			"input":         input,
-			"input_summary": inputSummary,
-			"truncated":     truncated,
-			"event_type":    string(provider.EventTypeToolUse),
-			"stream":        true, // Mark as stream to allow aggregation window
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	if err := c.sendMessageAndGetTS(c.convertToChatMessage(msg)); err != nil {
-		return err
-	}
-	return nil
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeToolUse, toolName, map[string]any{
+		"input":         input,
+		"input_summary": inputSummary,
+		"truncated":     truncated,
+		"event_type":    string(provider.EventTypeToolUse),
+		"stream":        true,
+	})
 }
 
 func (c *StreamCallback) handleToolResult(data any) error {
@@ -877,29 +876,56 @@ func (c *StreamCallback) handleToolResult(data any) error {
 		"duration_ms", durationMs,
 		"output_len", len(output))
 
-	// Send tool result message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeToolResult,
-		Content: output,
-		Metadata: map[string]any{
-			"success":        success,
-			"duration_ms":    durationMs,
-			"tool_name":      toolName,
-			"file_path":      filePath,
-			"content_length": contentLength,
-			"event_type":     string(provider.EventTypeToolResult),
-			"stream":         true, // Consistency with other flow events
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	if err := c.sendMessageAndGetTS(c.convertToChatMessage(msg)); err != nil {
-		return err
-	}
-	return nil
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeToolResult, output, map[string]any{
+		"success":        success,
+		"duration_ms":    durationMs,
+		"tool_name":      toolName,
+		"file_path":      filePath,
+		"content_length": contentLength,
+		"event_type":     string(provider.EventTypeToolResult),
+		"stream":         true,
+	})
 }
 
 func (c *StreamCallback) handleAnswer(data any) error {
+	// Capture answer content
+	var content string
+	var metadata map[string]any
+	if m, ok := data.(*event.EventWithMeta); ok {
+		content = m.EventData
+		if m.Meta != nil {
+			metadata = map[string]any{
+				"duration_ms": m.Meta.DurationMs,
+				"status":      m.Meta.Status,
+			}
+		}
+	} else if s, ok := data.(string); ok {
+		content = s
+	}
+
 	c.mu.Lock()
+	// Initialize native streaming on first answer
+	if !c.streamWriterActive && c.streamWriter == nil {
+		channelID := ""
+		threadTS := ""
+		if c.metadata != nil {
+			if ch, ok := c.metadata["channel_id"].(string); ok {
+				channelID = ch
+			}
+			if ts, ok := c.metadata["thread_ts"].(string); ok {
+				threadTS = ts
+			}
+		}
+		if channelID != "" {
+			c.streamWriter = c.adapters.NewStreamWriter(c.ctx, c.platform, channelID, threadTS)
+			if c.streamWriter != nil {
+				c.streamWriterActive = true
+				c.logger.Debug("Native streaming initialized", "channel_id", channelID)
+			}
+		}
+	}
+
 	// Schedule 3-second delayed deletion of thinking message for smooth UX transition
 	if c.thinkingSent && c.thinkingMessageTS != "" && c.thinkingChannelID != "" {
 		c.logger.Debug("Scheduling delayed thinking message deletion for answer",
@@ -932,21 +958,26 @@ func (c *StreamCallback) handleAnswer(data any) error {
 	// Schedule deletion of all tracked Thinking/Action messages (3s delay)
 	c.scheduleDeleteActionMessages()
 
-	// Capture answer content
-	var content string
-	var metadata map[string]any
-	if m, ok := data.(*event.EventWithMeta); ok {
-		content = m.EventData
-		if m.Meta != nil {
-			metadata = map[string]any{
-				"duration_ms": m.Meta.DurationMs,
-				"status":      m.Meta.Status,
-			}
+	// Copy writer reference while locked to avoid race condition
+	c.mu.Lock()
+	writer := c.streamWriter
+	active := c.streamWriterActive
+	c.mu.Unlock()
+
+	// Use native streaming if available
+	if active && writer != nil {
+		_, err := writer.Write([]byte(content))
+		if err != nil {
+			c.logger.Warn("Failed to write to stream, falling back to legacy streaming", "error", err)
+			// Fall through to legacy streaming path - do NOT clear session state here
+		} else {
+			// Clear processor session state only on successful answer
+			c.processor.ResetSession(c.platform, c.sessionID)
+			return nil
 		}
-	} else if s, ok := data.(string); ok {
-		content = s
 	}
 
+	// Fallback to legacy throttled streaming update (also used when native streaming fails)
 	msg := &base.ChatMessage{
 		Type:    base.MessageTypeAnswer,
 		Content: content,
@@ -993,8 +1024,6 @@ func (c *StreamCallback) handleAnswer(data any) error {
 }
 
 func (c *StreamCallback) handleError(data any) error {
-	// Reaction lifecycle: set ❌ on error
-	c.setReaction("x")
 
 	// Clear thinking state on first non-thinking event
 	if c.thinkingSent {
@@ -1020,16 +1049,10 @@ func (c *StreamCallback) handleError(data any) error {
 		errMsg = fmt.Sprintf("%v", data)
 	}
 
-	// Send error message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeError,
-		Content: errMsg,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeError),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	if err := c.sendMessageAndGetTS(c.convertToChatMessage(msg)); err != nil {
+	// Use buildChatMessage helper for consistency
+	if err := c.buildChatMessage(base.MessageTypeError, errMsg, map[string]any{
+		"event_type": string(provider.EventTypeError),
+	}); err != nil {
 		return err
 	}
 
@@ -1050,38 +1073,38 @@ func (c *StreamCallback) handleDangerBlock(data any) error {
 		reason = "security_block"
 	}
 
-	// Reaction lifecycle: set 🚫 on security block
-	c.setReaction("no_entry_sign")
-
 	// Log danger block event (INFO level for security events)
 	c.logger.Info("Danger block detected",
 		"session_id", c.sessionID,
 		"reason", reason)
 
-	// Send danger block message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeDangerBlock,
-		Content: reason,
-		Metadata: map[string]any{
-			"event_type": "security_block",
-			"session_id": c.sessionID,
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeDangerBlock, reason, map[string]any{
+		"event_type": "security_block",
+		"session_id": c.sessionID,
+	})
 }
 
 // handleSessionStats handles session statistics events
 // Implements EventTypeResult (Turn Complete)
 func (c *StreamCallback) handleSessionStats(data any) error {
-	// Reaction lifecycle: set ✅ on turn complete
-	c.setReaction("white_check_mark")
 
 	stats, ok := data.(*event.SessionStatsData)
 	if !ok {
 		c.logger.Debug("session_stats: invalid data type", "type", fmt.Sprintf("%T", data))
 		return nil
 	}
+
+	// Close native streaming if active
+	c.mu.Lock()
+	if c.streamWriter != nil {
+		if err := c.streamWriter.Close(); err != nil {
+			c.logger.Warn("Failed to close stream", "error", err)
+		}
+		c.streamWriter = nil
+		c.streamWriterActive = false
+	}
+	c.mu.Unlock()
 
 	// Flush any pending stream state before sending session stats
 	// This ensures the last answer message is sent before the turn completes
@@ -1094,27 +1117,21 @@ func (c *StreamCallback) handleSessionStats(data any) error {
 	// This applies a 3s delayed deletion for a clean end-state UX
 	c.scheduleDeleteActionMessages()
 
-	// Send stats message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeSessionStats,
-		Content: "",
-		Metadata: map[string]any{
-			"event_type":           "session_stats",
-			"session_id":           stats.SessionID,
-			"total_duration_ms":    stats.TotalDurationMs,
-			"thinking_duration_ms": stats.ThinkingDurationMs,
-			"tool_duration_ms":     stats.ToolDurationMs,
-			"input_tokens":         int64(stats.InputTokens),
-			"output_tokens":        int64(stats.OutputTokens),
-			"total_tokens":         stats.TotalTokens,
-			"tool_call_count":      int64(stats.ToolCallCount),
-			"tools_used":           stats.ToolsUsed,
-			"files_modified":       int64(stats.FilesModified),
-			"file_paths":           stats.FilePaths,
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	if err := c.sendMessageAndGetTS(c.convertToChatMessage(msg)); err != nil {
+	// Use buildChatMessage helper for consistency
+	if err := c.buildChatMessage(base.MessageTypeSessionStats, "", map[string]any{
+		"event_type":           "session_stats",
+		"session_id":           stats.SessionID,
+		"total_duration_ms":    stats.TotalDurationMs,
+		"thinking_duration_ms": stats.ThinkingDurationMs,
+		"tool_duration_ms":     stats.ToolDurationMs,
+		"input_tokens":         int64(stats.InputTokens),
+		"output_tokens":        int64(stats.OutputTokens),
+		"total_tokens":         stats.TotalTokens,
+		"tool_call_count":      int64(stats.ToolCallCount),
+		"tools_used":           stats.ToolsUsed,
+		"files_modified":       int64(stats.FilesModified),
+		"file_paths":           stats.FilePaths,
+	}); err != nil {
 		return err
 	}
 
@@ -1150,21 +1167,11 @@ func (c *StreamCallback) handleCommandProgress(data any) error {
 		title = "Processing..."
 	}
 
-	// Reaction lifecycle: ensure 🔨 on progress
-	c.setReaction("hammer_and_wrench")
+	// Add event_type to metadata
+	metadata["event_type"] = string(provider.EventTypeCommandProgress)
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeCommandProgress,
-		Content: title,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeCommandProgress),
-		},
-	}
-	for k, v := range metadata {
-		msg.Metadata[k] = v
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeCommandProgress, title, metadata)
 }
 
 // handleCommandComplete handles command completion events
@@ -1193,18 +1200,11 @@ func (c *StreamCallback) handleCommandComplete(data any) error {
 		title = "Command completed"
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeCommandComplete,
-		Content: title,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeCommandComplete),
-		},
-	}
-	for k, v := range metadata {
-		msg.Metadata[k] = v
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Add event_type to metadata
+	metadata["event_type"] = string(provider.EventTypeCommandComplete)
+
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeCommandComplete, title, metadata)
 }
 
 // handleSystem handles system-level messages
@@ -1220,15 +1220,9 @@ func (c *StreamCallback) handleSystem(data any) error {
 		return nil
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeSystem,
-		Content: content,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeSystem),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	return c.buildChatMessage(base.MessageTypeSystem, content, map[string]any{
+		"event_type": string(provider.EventTypeSystem),
+	})
 }
 
 // handleUser handles user message reflection
@@ -1244,15 +1238,9 @@ func (c *StreamCallback) handleUser(data any) error {
 		return nil
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeUser,
-		Content: content,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeUser),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	return c.buildChatMessage(base.MessageTypeUser, content, map[string]any{
+		"event_type": string(provider.EventTypeUser),
+	})
 }
 
 // handleStepStart handles step start events (OpenCode specific)
@@ -1278,18 +1266,11 @@ func (c *StreamCallback) handleStepStart(data any) error {
 		content = "Starting step..."
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeStepStart,
-		Content: content,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeStepStart),
-		},
-	}
-	for k, v := range metadata {
-		msg.Metadata[k] = v
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Add event_type to metadata
+	metadata["event_type"] = string(provider.EventTypeStepStart)
+
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeStepStart, content, metadata)
 }
 
 // handleStepFinish handles step finish events (OpenCode specific)
@@ -1316,18 +1297,11 @@ func (c *StreamCallback) handleStepFinish(data any) error {
 		content = "Step completed"
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeStepFinish,
-		Content: content,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeStepFinish),
-		},
-	}
-	for k, v := range metadata {
-		msg.Metadata[k] = v
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Add event_type to metadata
+	metadata["event_type"] = string(provider.EventTypeStepFinish)
+
+	// Use buildChatMessage helper for consistency
+	return c.buildChatMessage(base.MessageTypeStepFinish, content, metadata)
 }
 
 // handleRaw handles raw/unparsed output
@@ -1343,15 +1317,9 @@ func (c *StreamCallback) handleRaw(data any) error {
 		return nil
 	}
 
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeRaw,
-		Content: content,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeRaw),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	return c.buildChatMessage(base.MessageTypeRaw, content, map[string]any{
+		"event_type": string(provider.EventTypeRaw),
+	})
 }
 
 // copyMessageMetadata copies important metadata from original message
@@ -1673,15 +1641,9 @@ func (c *StreamCallback) handlePlanMode(data any) error {
 	}
 
 	// Send plan mode message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypePlanMode,
-		Content: planContent,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypePlanMode),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	return c.buildChatMessage(base.MessageTypePlanMode, planContent, map[string]any{
+		"event_type": string(provider.EventTypePlanMode),
+	})
 }
 
 // handleExitPlanMode handles exit plan mode requests (tool_use with name=ExitPlanMode)
@@ -1701,16 +1663,10 @@ func (c *StreamCallback) handleExitPlanMode(data any) error {
 	}
 
 	// Send exit plan mode message with platform-agnostic MessageType
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeExitPlanMode,
-		Content: planSummary,
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeExitPlanMode),
-			"session_id": c.sessionID,
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	return c.buildChatMessage(base.MessageTypeExitPlanMode, planSummary, map[string]any{
+		"event_type": string(provider.EventTypeExitPlanMode),
+		"session_id": c.sessionID,
+	})
 }
 
 // =============================================================================
@@ -1734,9 +1690,6 @@ func (c *StreamCallback) handleAskUserQuestion(data any) error {
 	if question == "" {
 		return nil
 	}
-
-	// Reaction lifecycle: set ⏳ on question
-	c.setReaction("hourglass_flowing_sand")
 
 	// Send ask user question message with platform-agnostic MessageType
 	msg := &base.ChatMessage{
@@ -1765,9 +1718,6 @@ func (c *StreamCallback) handleSessionStart(data any) error {
 	}
 	c.sessionStartSent = true
 	c.mu.Unlock()
-
-	// Reaction lifecycle: set 📥 on session start
-	c.setReaction("inbox_tray")
 
 	var content string
 
@@ -1830,20 +1780,10 @@ func (c *StreamCallback) handleEngineStarting(data any) error {
 // Implements EventTypeUserMessageReceived per spec (0.6)
 // Triggered immediately after user message is received
 func (c *StreamCallback) handleUserMessageReceived(_ any) error {
-	// Reaction lifecycle: set 📥 on acknowledgment
-	c.setReaction("inbox_tray")
 
-	// Per spec: context block with :inbox: emoji
-	// Content must not be empty to avoid "no_text" error
-	msg := &base.ChatMessage{
-		Type:    base.MessageTypeUserMessageReceived,
-		Content: "Message received",
-		Metadata: map[string]any{
-			"event_type": string(provider.EventTypeUserMessageReceived),
-		},
-	}
-	msg.Metadata = c.mergeMetadata(msg.Metadata)
-	return c.sendMessageAndGetTS(c.convertToChatMessage(msg))
+	// Immediately send a Thinking placeholder to show active processing with the animated avatar
+	// Use updateStatusMessage to properly capture and store message_ts for subsequent streaming updates
+	return c.updateStatusMessage(base.MessageTypeThinking, "Thinking...")
 }
 
 // handlePermissionRequest handles permission request events
@@ -1890,9 +1830,6 @@ func (c *StreamCallback) handlePermissionRequest(data any) error {
 
 	// Get tool and input for display
 	tool, input := req.GetToolAndInput()
-
-	// Reaction lifecycle: set ⏳ on permission wait
-	c.setReaction("hourglass_flowing_sand")
 
 	msg := &base.ChatMessage{
 		Type:    base.MessageTypePermissionRequest,

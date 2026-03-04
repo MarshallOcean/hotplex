@@ -1,3 +1,5 @@
+// Package slack provides the Slack adapter implementation for the hotplex engine.
+// Detailed message construction logic using Slack Block Kit.
 package slack
 
 import (
@@ -10,7 +12,8 @@ import (
 	"github.com/slack-go/slack"
 )
 
-// MessageBuilder builds Slack-specific messages from platform-agnostic ChatMessage
+// MessageBuilder translates platform-agnostic base.ChatMessage objects into
+// rich Slack Block Kit structures, ensuring consistent UX across different message types.
 type MessageBuilder struct {
 	formatter *MrkdwnFormatter
 }
@@ -92,10 +95,62 @@ func (b *MessageBuilder) BuildThinkingMessage(msg *base.ChatMessage) []slack.Blo
 		content = "... " + string(runes[len(runes)-60:])
 	}
 
-	// Per spec: context block with :brain: emoji and italic text
-	text := slack.NewTextBlockObject("mrkdwn", ":brain: _"+content+"_", false, false)
+	// Use an avatar block with animated WebP for the Thinking State as per new UX design
+	text := slack.NewTextBlockObject("mrkdwn", ":hourglass_flowing_sand: _"+content+"_", false, false)
 	return []slack.Block{
 		slack.NewContextBlock("", text),
+	}
+}
+
+// BuildStatusBubble builds a status bubble message from StatusType
+func (b *MessageBuilder) BuildStatusBubble(status base.StatusType, text string) []slack.Block {
+	if text == "" {
+		text = getDefaultStatusText(status)
+	}
+
+	// Map StatusType to emoji
+	emoji := getStatusEmoji(status)
+
+	// Truncate to 64 chars
+	runes := []rune(text)
+	if len(runes) > 64 {
+		text = "... " + string(runes[len(runes)-60:])
+	}
+
+	formatted := fmt.Sprintf("%s _%s_", emoji, text)
+	textObj := slack.NewTextBlockObject("mrkdwn", formatted, false, false)
+	return []slack.Block{
+		slack.NewContextBlock("", textObj),
+	}
+}
+
+func getStatusEmoji(status base.StatusType) string {
+	switch status {
+	case base.StatusThinking:
+		return ":hourglass_flowing_sand:"
+	case base.StatusToolUse:
+		return ":toolbox:"
+	case base.StatusToolResult:
+		return ":white_check_mark:"
+	case base.StatusAnswering:
+		return ":speech_balloon:"
+	default:
+		return ":bell:"
+	}
+}
+
+func getDefaultStatusText(status base.StatusType) string {
+	switch status {
+	case base.StatusThinking:
+		return "Thinking..."
+	case base.StatusToolUse:
+		return "Using tool..."
+	case base.StatusToolResult:
+		return "Tool completed"
+	case base.StatusAnswering:
+		return "Answering..."
+	default:
+		return "Processing..."
 	}
 }
 
@@ -1056,8 +1111,8 @@ func (b *MessageBuilder) BuildPermissionRequestMessageFromChat(msg *base.ChatMes
 	// Sanitize and truncate commands for preview
 	safeInput := SanitizeCommand(input)
 	displayInput := safeInput
-	if RuneCount(displayInput) > 500 {
-		displayInput = TruncateByRune(displayInput, 497) + "..."
+	if base.RuneCount(displayInput) > 500 {
+		displayInput = base.TruncateWithEllipsis(displayInput, 500)
 	}
 
 	var blocks []slack.Block

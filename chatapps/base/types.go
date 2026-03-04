@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 )
@@ -72,14 +73,6 @@ type RichContent struct {
 	Blocks         []any
 	Embeds         []any
 	Attachments    []Attachment
-	Reactions      []Reaction
-}
-
-// Reaction represents a reaction to add to a message
-type Reaction struct {
-	Name      string // emoji name (e.g., "thumbsup", "+1")
-	Channel   string
-	Timestamp string // message timestamp to react to
 }
 
 type Attachment struct {
@@ -119,9 +112,16 @@ type WebhookProvider interface {
 // MessageOperations defines platform-specific message operations
 type MessageOperations interface {
 	DeleteMessage(ctx context.Context, channelID, messageTS string) error
-	AddReaction(ctx context.Context, reaction Reaction) error
-	RemoveReaction(ctx context.Context, reaction Reaction) error
 	UpdateMessage(ctx context.Context, channelID, messageTS string, msg *ChatMessage) error
+	// SetAssistantStatus sets the native assistant status text at the bottom of the thread
+	// Used to drive dynamic status hints (e.g., "Thinking...", "Searching code...")
+	SetAssistantStatus(ctx context.Context, channelID, threadTS, status string) error
+	// StartStream starts a native streaming message, returns message_ts as anchor for subsequent updates
+	StartStream(ctx context.Context, channelID, threadTS string) (string, error)
+	// AppendStream incrementally pushes content to an existing stream
+	AppendStream(ctx context.Context, channelID, messageTS, content string) error
+	// StopStream ends the stream and finalizes the message
+	StopStream(ctx context.Context, channelID, messageTS string) error
 }
 
 // SessionOperations defines platform-specific session operations
@@ -129,4 +129,52 @@ type MessageOperations interface {
 type SessionOperations interface {
 	GetSession(key string) (*Session, bool)
 	FindSessionByUserAndChannel(userID, channelID string) *Session
+}
+
+// StreamWriter defines the interface for streaming message writes
+// Platform-agnostic abstraction for native streaming support
+type StreamWriter interface {
+	io.Writer
+	io.Closer
+	// MessageTS returns the message timestamp after stream starts
+	MessageTS() string
+}
+
+// StatusType defines AI working states
+type StatusType string
+
+const (
+	StatusThinking   StatusType = "thinking"
+	StatusToolUse    StatusType = "tool_use"
+	StatusToolResult StatusType = "tool_result"
+	StatusAnswering  StatusType = "answering"
+	StatusIdle       StatusType = "idle"
+)
+
+// StatusProvider defines the abstraction for status notification
+// Follows Dependency Inversion Principle - adapters decide the concrete implementation
+type StatusProvider interface {
+	// SetStatus sets current status, adapter converts to native API or bubble message
+	// channelID and threadTS specify where to display the status
+	SetStatus(ctx context.Context, channelID, threadTS string, status StatusType, text string) error
+
+	// ClearStatus clears status indicator
+	ClearStatus(ctx context.Context, channelID, threadTS string) error
+}
+
+// MessageTypeToStatusType converts MessageType to StatusType for status notification
+// Returns StatusIdle for unrecognized types
+func MessageTypeToStatusType(msgType MessageType) StatusType {
+	switch msgType {
+	case MessageTypeThinking:
+		return StatusThinking
+	case MessageTypeToolUse:
+		return StatusToolUse
+	case MessageTypeToolResult:
+		return StatusToolResult
+	case MessageTypeAnswer, MessageTypeExitPlanMode:
+		return StatusAnswering
+	default:
+		return StatusIdle
+	}
 }

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/hashicorp/golang-lru/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // CacheKey represents a unique cache key for LLM requests.
 type CacheKey struct {
-	Prompt  string
-	Model   string
+	Prompt    string
+	Model     string
 	IsAnalyze bool
 }
 
