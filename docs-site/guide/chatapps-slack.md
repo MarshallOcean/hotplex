@@ -10,9 +10,8 @@ This guide is authored for the discerning engineer who demands the highest level
 
 The most refined path to integration is via the **App Manifest**. This allows you to orchestrate dozens of permissions and features in a single, atomic declaration.
 
-1.  Navigate to the [Slack App Dashboard](https://api.slack.com/apps).
-2.  **Create New App** -> **From an app manifest**.
-3.  Choose your workspace and paste the following YAML:
+> [!TIP]
+> For visual step-by-step instructions on creating your Slack App and obtaining tokens, refer to the **[Slack Beginner Guide](https://github.com/hrygo/hotplex/blob/main/docs/chatapps/slack-setup-beginner.md)**. For a deep reference on all configuration parameters, see the **[Core Configuration Manual](https://github.com/hrygo/hotplex/blob/main/docs/chatapps/chatapps-slack-manual.md)**.
 
 ```yaml
 display_information:
@@ -54,44 +53,17 @@ settings:
 
 ---
 
-### 🗝️ The Sovereignty of Secrets
-
-To establish a secure link to the Bridge, you must secure the following cryptographic keys from your Slack Dashboard:
-
-| Key                | Recommended Path      | Purpose                                                         |
-| :----------------- | :-------------------- | :-------------------------------------------------------------- |
-| **Bot Token**      | `OAuth & Permissions` | **The Primary Key**: For message orchestration and UI updates.  |
-| **App Token**      | `Basic Information`   | **The Socket Key**: Enables high-performance Socket Mode.       |
-| **Signing Secret** | `Basic Information`   | **The Verifier**: Ensures the integrity of all incoming pulses. |
-
----
-
-### 📡 Communication Modalities
-
-HotPlex supports two modes of existence. Define your preference in the `.env` configuration:
-
-#### Modality A: Socket Mode (The Developer Choice)
-- **Nature**: An outbound WebSocket connection. Ideal for restricted networks or internal developer environments.
-- **Config**: `HOTPLEX_SLACK_MODE=socket`, `HOTPLEX_SLACK_APP_TOKEN=xapp-...`
-
-#### Modality B: HTTP Mode (The Production Choice)
-- **Nature**: A high-availability webhook entry point. Ideal for scalable, production-grade load balancers.
-- **Config**: `HOTPLEX_SLACK_MODE=http`, `HOTPLEX_SLACK_SIGNING_SECRET=...`
-- **End-point**: Register `https://your-domain.com/webhook/slack/events` in the Slack Console.
-
----
-
 ### ✨ The Visual Language of Agency
 
 #### 1. Native Assistant Status (2026 AI-Native UX)
 
 HotPlex leverages Slack's **Assistant Threads API** for real-time progress indication—a premium experience that keeps chat history clean:
 
-| Status | Visual | Description |
-|--------|--------|-------------|
-| `in_progress` | 🧠 *Thinking...* | Agent is reasoning or planning |
-| `tool_use` | 🔧 *Using tool...* | Agent is executing a tool/command |
-| `tool_error` | ⚠️ *Tool error* | Tool execution failed |
+| Status        | Visual            | Description                       |
+| ------------- | ----------------- | --------------------------------- |
+| `in_progress` | 🧠 *Thinking...*   | Agent is reasoning or planning    |
+| `tool_use`    | 🔧 *Using tool...* | Agent is executing a tool/command |
+| `tool_error`  | ⚠️ *Tool error*    | Tool execution failed             |
 
 This replaces legacy "typing indicator" and bubble simulations with native Slack functionality.
 

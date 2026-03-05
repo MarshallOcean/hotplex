@@ -10,7 +10,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/github/license/hrygo/hotplex?style=for-the-badge&color=blue" alt="License"></a>
   </p>
   <p>
-    <a href="README.md">English</a> • <b>简体中文</b> • <a href="docs/sdk-guide_zh.md">开发者手册</a> • <a href="docs/webapps/slack-setup-beginner_zh.md">Slack 接入保姆级教程</a> • <a href="https://hrygo.github.io/hotplex/">文档站点</a>
+    <a href="README.md">English</a> • <b>简体中文</b> • <a href="docs/sdk-guide_zh.md">开发者手册</a> • <a href="docs/chatapps/slack-setup-beginner_zh.md">Slack 接入保姆级教程</a> • <a href="https://hrygo.github.io/hotplex/">文档站点</a>
   </p>
 </div>
 
@@ -44,7 +44,7 @@
 
 生产环境的**主要接入方式**。通过即时通讯平台直接与 AI 智能体对话。
 
-> 🌈 **Slack 新手通道**：不想看复杂设置？👉 **[点击这里查看 Slack 零基础保姆级接入教程](docs/webapps/slack-setup-beginner_zh.md)**，图文并茂、5 分钟搞定！
+> 🌈 **Slack 新手通道**：不想看复杂设置？👉 **[点击这里查看 Slack 零基础保姆级接入教程](docs/chatapps/slack-setup-beginner_zh.md)**，图文并茂、5 分钟搞定！
 
 | 平台         | 状态                                           |
 | ------------ | ---------------------------------------------- |

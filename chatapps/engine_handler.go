@@ -268,6 +268,10 @@ type StreamCallback struct {
 	// Native streaming state - platform-agnostic streaming output
 	streamWriter       base.StreamWriter // Platform-agnostic streaming writer
 	streamWriterActive bool              // Whether native streaming is active
+
+	// Idle state detection
+	idleTimer  *time.Timer
+	isFinished bool
 }
 
 // Close releases resources held by the callback
@@ -276,8 +280,12 @@ func (c *StreamCallback) Close() {
 		c.processor.Close()
 	}
 
-	// Important: Finalize native stream if active
+	// Important: Finalize native stream and stop idle timer
 	c.mu.Lock()
+	c.isFinished = true
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
 	writer := c.streamWriter
 	c.mu.Unlock()
 
@@ -331,10 +339,42 @@ func NewStreamCallback(
 	return cb
 }
 
+// resetIdleTimer resets the 3-second generic thinking fallback timer
+func (c *StreamCallback) resetIdleTimer() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.isFinished {
+		return
+	}
+
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
+
+	c.idleTimer = time.AfterFunc(3*time.Second, func() {
+		c.mu.Lock()
+		finished := c.isFinished
+		c.mu.Unlock()
+
+		if finished {
+			return
+		}
+
+		c.logger.Debug("Session idle for 3s, sending fallback thinking status", "session_id", c.sessionID)
+		if err := c.updateStatusMessage(base.MessageTypeThinking, StatusThinkingLabel); err != nil {
+			c.logger.Warn("Failed to update status for idle thinking fallback", "error", err)
+		}
+	})
+}
+
 // Handle implements event.Callback
 func (c *StreamCallback) Handle(eventType string, data any) error {
 	// Note: No mutex lock here - individual handlers manage their own locking
 	// This prevents deadlock when handlers need to access shared state
+
+	// Reset idle timer on every event
+	c.resetIdleTimer()
 
 	switch provider.ProviderEventType(eventType) {
 	case provider.EventTypeThinking:
@@ -814,6 +854,12 @@ func (c *StreamCallback) handleAnswer(data any) error {
 }
 
 func (c *StreamCallback) handleError(data any) error {
+	c.mu.Lock()
+	c.isFinished = true
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
+	c.mu.Unlock()
 
 	// Clear thinking state on first non-thinking event
 
@@ -908,8 +954,12 @@ func (c *StreamCallback) handleSessionStats(data any) error {
 		return nil
 	}
 
-	// Close native streaming if active
+	// Close native streaming and stop timers if active
 	c.mu.Lock()
+	c.isFinished = true
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
 	if c.streamWriter != nil {
 		if err := c.streamWriter.Close(); err != nil {
 			c.logger.Warn("Failed to close stream", "error", err)

@@ -52,7 +52,7 @@ brew install opencode
 
 Interact with AI agents directly through Slack, Telegram, Feishu, and other messaging platforms. This is HotPlex's **primary access method**, ideal for production environments.
 
-> 🌈 **Slack Setup for Beginners**: First time setting up a Slack bot? Check out our **[Zero-to-Hero Slack Setup Guide](webapps/slack-setup-beginner.md)** for a simple, step-by-step tutorial.
+> 🌈 **Slack Setup for Beginners**: First time setting up a Slack bot? Check out our **[Zero-to-Hero Slack Setup Guide](chatapps/slack-setup-beginner.md)** for a simple, step-by-step tutorial.
 
 ### Supported Platforms
 
@@ -241,7 +241,7 @@ python main.py
 ## What's Next?
 
 - [ChatApps Architecture Overview](chatapps/chatapps-architecture.md) - Multi-platform integration design
-- [Slack Beginner Guide](webapps/slack-setup-beginner.md) - 5-minute step-by-step tutorial
+- [Slack Beginner Guide](chatapps/slack-setup-beginner.md) - 5-minute step-by-step tutorial
 - [Slack Integration Manual](chatapps/chatapps-slack-manual.md) - Complete Slack technical setup guide
 - [Feishu Integration Manual](chatapps/chatapps-feishu-manual.md) - Feishu setup guide
 - [Architecture Deep Dive](architecture.md) - Learn how HotPlex works

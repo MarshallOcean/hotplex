@@ -10,7 +10,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/github/license/hrygo/hotplex?style=for-the-badge&color=blue" alt="License"></a>
   </p>
   <p>
-    <b>English</b> • <a href="README_zh.md">简体中文</a> • <a href="docs/sdk-guide.md">SDK Guide</a> • <a href="docs/webapps/slack-setup-beginner.md">Slack Beginner Guide</a> • <a href="https://hrygo.github.io/hotplex/">Docs Site</a>
+    <b>English</b> • <a href="README_zh.md">简体中文</a> • <a href="docs/sdk-guide.md">SDK Guide</a> • <a href="docs/chatapps/slack-setup-beginner.md">Slack Beginner Guide</a> • <a href="https://hrygo.github.io/hotplex/">Docs Site</a>
   </p>
 </div>
 
@@ -44,7 +44,7 @@ Developers no longer need to endure the multi-second latency of restarting CLI e
 
 The primary access channel for production environments. Interact with AI agents directly through messaging platforms.
 
-> 🌈 **Slack Setup for Beginners**: Don't want to read complex docs? 👉 **[Check out our Zero-to-Hero Slack Setup Guide](docs/webapps/slack-setup-beginner.md)** for a simple, click-by-click tutorial!
+> 🌈 **Slack Setup for Beginners**: Don't want to read complex docs? 👉 **[Check out our Zero-to-Hero Slack Setup Guide](docs/chatapps/slack-setup-beginner.md)** for a simple, click-by-click tutorial!
 
 | Platform     | Status                                            |
 | ------------ | ------------------------------------------------- |
