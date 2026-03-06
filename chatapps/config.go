@@ -17,11 +17,14 @@ import (
 
 type PlatformConfig struct {
 	Platform         string                  `yaml:"platform"`
+	Mode             string                  `yaml:"mode"`
 	SystemPrompt     string                  `yaml:"system_prompt"`
 	TaskInstructions string                  `yaml:"task_instructions"`
 	Engine           EngineConfig            `yaml:"engine"`
 	Provider         provider.ProviderConfig `yaml:"provider"`
 	Security         SecurityConfig          `yaml:"security"`
+	Session          SessionConfig           `yaml:"session"`
+	MessageStore     MessageStoreConfig      `yaml:"message_store,omitempty"`
 	DingTalk         DingTalkConfig          `yaml:"dingtalk"`
 	WhatsApp         WhatsAppConfig          `yaml:"whatsapp"`
 	Options          map[string]any          `yaml:"options,omitempty"`
@@ -37,6 +40,7 @@ type PermissionConfig struct {
 	DMPolicy              string   `yaml:"dm_policy"`
 	GroupPolicy           string   `yaml:"group_policy"`
 	BotUserID             string   `yaml:"bot_user_id"`
+	BroadcastResponse     string   `yaml:"broadcast_response"` // Response for broadcast messages (multibot mode)
 	AllowedUsers          []string `yaml:"allowed_users"`
 	BlockedUsers          []string `yaml:"blocked_users"`
 	SlashCommandRateLimit float64  `yaml:"slash_command_rate_limit"`
@@ -57,12 +61,45 @@ type WhatsAppConfig struct {
 	APIVersion    string `yaml:"api_version"`
 }
 
+type SessionConfig struct {
+	Timeout         time.Duration `yaml:"timeout"`
+	CleanupInterval time.Duration `yaml:"cleanup_interval"`
+}
+
 type EngineConfig struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	IdleTimeout     time.Duration `yaml:"idle_timeout"`
 	WorkDir         string        `yaml:"work_dir"`
 	AllowedTools    []string      `yaml:"allowed_tools"`
 	DisallowedTools []string      `yaml:"disallowed_tools"`
+}
+
+// MessageStoreConfig 消息存储配置 (Phase 3)
+type MessageStoreConfig struct {
+	Enabled   bool            `yaml:"enabled"`
+	Type      string          `yaml:"type"` // sqlite | postgres | memory
+	SQLite    SQLiteConfig    `yaml:"sqlite"`
+	Postgres  PostgresConfig  `yaml:"postgres"`
+	Strategy  string          `yaml:"strategy"`
+	Streaming StreamingConfig `yaml:"streaming"`
+}
+
+type SQLiteConfig struct {
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"`
+}
+
+type PostgresConfig struct {
+	DSN            string `yaml:"dsn"`
+	MaxConnections int    `yaml:"max_connections"`
+	Level          int    `yaml:"level"` // 1=百万级，2=亿级
+}
+
+type StreamingConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	BufferSize    int           `yaml:"buffer_size"`
+	Timeout       time.Duration `yaml:"timeout"`
+	StoragePolicy string        `yaml:"storage_policy"` // complete_only | all_chunks
 }
 
 type Logger = slog.Logger
@@ -106,8 +143,11 @@ func (c *ConfigLoader) Load(configDir string) error {
 			continue
 		}
 
+		// Expand environment variables in config file
+		expanded := os.ExpandEnv(string(data))
+
 		var cfg PlatformConfig
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
+		if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 			c.logger.Warn("Failed to parse config file", "file", filename, "error", err)
 			continue
 		}

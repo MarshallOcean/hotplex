@@ -3,7 +3,6 @@ package slack
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"time"
 
@@ -39,15 +38,12 @@ type MessageEvent struct {
 }
 
 func (a *Adapter) handleEvent(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !base.CheckMethodPOST(w, r) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		a.Logger().Error("Read body failed", "error", err)
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	body, ok := base.ReadBodyWithLog(w, r, a.Logger())
+	if !ok {
 		return
 	}
 
@@ -134,6 +130,7 @@ func (a *Adapter) handleEventCallback(ctx context.Context, teamID string, eventD
 	}
 	telemetry.GetMetrics().IncSlackPermissionAllowed()
 
+	// Channel/DM policy check (must happen before GroupPolicy check)
 	if !a.config.ShouldProcessChannel(msgEvent.ChannelType, msgEvent.Channel) {
 		if msgEvent.ChannelType == "dm" {
 			telemetry.GetMetrics().IncSlackPermissionBlockedDM()
@@ -142,17 +139,35 @@ func (a *Adapter) handleEventCallback(ctx context.Context, teamID string, eventD
 		return
 	}
 
+	// Group policy check: if GroupPolicy is "mention", only process messages that mention the bot
+	// Note: HTTP mode does not receive app_mention events, so we must handle mentions here
 	if msgEvent.ChannelType == "channel" || msgEvent.ChannelType == "group" {
-		if a.config.GroupPolicy == "mention" && !a.config.ContainsBotMention(msgEvent.Text) {
-			telemetry.GetMetrics().IncSlackPermissionBlockedMention()
-			a.Logger().Debug("Message ignored - bot not mentioned", "channel_type", msgEvent.ChannelType, "policy", "mention")
-			return
+		if a.config.GroupPolicy == "mention" {
+			if !a.config.ContainsBotMention(msgEvent.Text) {
+				telemetry.GetMetrics().IncSlackPermissionBlockedMention()
+				a.Logger().Debug("Message ignored - bot not mentioned", "channel_type", msgEvent.ChannelType, "policy", "mention")
+				return
+			}
+			// Bot is mentioned in channel/group - process this message
 		}
-	}
-
-	if msgEvent.Type == "message" && msgEvent.ChannelType != "dm" && a.config.ContainsBotMention(msgEvent.Text) {
-		a.Logger().Debug("Skipping 'message' event with mention (handled by 'app_mention')", "ts", msgEvent.TS)
-		return
+		// Multibot mode: respond if no mentions (broadcast) or mentioned self
+		if a.config.GroupPolicy == "multibot" {
+			if !a.config.ShouldRespondInMultibotMode(msgEvent.Text) {
+				a.Logger().Debug("Message ignored - other bot mentioned", "channel_type", msgEvent.ChannelType, "policy", "multibot")
+				return
+			}
+			// If broadcast (no @), send polite response instead of processing
+			if a.config.IsBroadcastMessage(msgEvent.Text) {
+				threadID := msgEvent.ThreadTS
+				if threadID == "" {
+					threadID = msgEvent.TS
+				}
+				a.Logger().Debug("Broadcast message - sending polite response", "channel", msgEvent.Channel)
+				response := a.config.GetBroadcastResponse(ctx, msgEvent.Text)
+				_ = a.SendToChannel(ctx, msgEvent.Channel, response, threadID)
+				return
+			}
+		}
 	}
 
 	threadID := msgEvent.ThreadTS

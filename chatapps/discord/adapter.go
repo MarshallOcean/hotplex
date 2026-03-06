@@ -23,6 +23,12 @@ type Adapter struct {
 	webhook     *base.WebhookRunner
 }
 
+// Compile-time interface compliance check
+var (
+	_ base.ChatAdapter     = (*Adapter)(nil)
+	_ base.WebhookProvider = (*Adapter)(nil)
+)
+
 func NewAdapter(config Config, logger *slog.Logger, opts ...base.AdapterOption) *Adapter {
 	a := &Adapter{
 		config:      config,
@@ -99,15 +105,12 @@ type Interaction struct {
 }
 
 func (a *Adapter) handleInteraction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !base.CheckMethodPOST(w, r) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		a.Logger().Error("Read body failed", "error", err)
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	body, ok := base.ReadBodyWithLog(w, r, a.Logger())
+	if !ok {
 		return
 	}
 

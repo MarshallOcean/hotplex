@@ -108,10 +108,13 @@ func Setup(ctx context.Context, logger *slog.Logger, configDir ...string) (http.
 			WebhookURL:  os.Getenv("HOTPLEX_TELEGRAM_WEBHOOK_URL"),
 			SecretToken: os.Getenv("HOTPLEX_TELEGRAM_SECRET_TOKEN"),
 		}
+		var opts []base.AdapterOption
 		if pc != nil {
-			cfg.SystemPrompt = pc.SystemPrompt
+			opts = append(opts, base.WithSessionTimeout(pc.Session.Timeout))
+			opts = append(opts, base.WithCleanupInterval(pc.Session.CleanupInterval))
 		}
-		return telegram.NewAdapter(cfg, logger, base.WithoutServer())
+		opts = append(opts, base.WithoutServer())
+		return telegram.NewAdapter(cfg, logger, opts...)
 	}, "HOTPLEX_TELEGRAM_BOT_TOKEN")
 
 	// Discord
@@ -124,10 +127,13 @@ func Setup(ctx context.Context, logger *slog.Logger, configDir ...string) (http.
 			BotToken:  token,
 			PublicKey: os.Getenv("HOTPLEX_DISCORD_PUBLIC_KEY"),
 		}
+		var opts []base.AdapterOption
 		if pc != nil {
-			cfg.SystemPrompt = pc.SystemPrompt
+			opts = append(opts, base.WithSessionTimeout(pc.Session.Timeout))
+			opts = append(opts, base.WithCleanupInterval(pc.Session.CleanupInterval))
 		}
-		return discord.NewAdapter(cfg, logger, base.WithoutServer())
+		opts = append(opts, base.WithoutServer())
+		return discord.NewAdapter(cfg, logger, opts...)
 	}, "HOTPLEX_DISCORD_BOT_TOKEN")
 
 	// Slack
@@ -161,15 +167,37 @@ func Setup(ctx context.Context, logger *slog.Logger, configDir ...string) (http.
 			config.BlockedUsers = pc.Security.Permission.BlockedUsers
 			config.SlashCommandRateLimit = pc.Security.Permission.SlashCommandRateLimit
 
+			// Debug: Log GroupPolicy value
+			logger.Info("Slack config loaded from YAML",
+				"group_policy", config.GroupPolicy,
+				"bot_user_id", config.BotUserID,
+				"dm_policy", config.DMPolicy)
+
+			// Set broadcast response for multibot mode
+			if pc.Security.Permission.BroadcastResponse != "" {
+				config.SetBroadcastResponse(pc.Security.Permission.BroadcastResponse)
+			}
+
 			// AppToken fallback
 			if config.AppToken == "" && pc.Options != nil {
 				if appToken, ok := pc.Options["app_token"].(string); ok {
 					config.AppToken = os.ExpandEnv(appToken)
 				}
 			}
+
+			// Mode from YAML overrides env var (if set)
+			if pc.Mode != "" {
+				config.Mode = pc.Mode
+			}
 		}
 
-		return slack.NewAdapter(config, logger, base.WithoutServer())
+		var opts []base.AdapterOption
+		if pc != nil {
+			opts = append(opts, base.WithSessionTimeout(pc.Session.Timeout))
+			opts = append(opts, base.WithCleanupInterval(pc.Session.CleanupInterval))
+		}
+		opts = append(opts, base.WithoutServer())
+		return slack.NewAdapter(config, logger, opts...)
 	}, "HOTPLEX_SLACK_BOT_TOKEN")
 
 	// DingTalk
@@ -203,7 +231,12 @@ func Setup(ctx context.Context, logger *slog.Logger, configDir ...string) (http.
 				cfg.MaxMessageLen = pc.DingTalk.MaxMessageLen
 			}
 		}
-		return dingtalk.NewAdapter(cfg, logger, base.WithoutServer())
+		var opts []base.AdapterOption
+		if pc != nil {
+			opts = append(opts, base.WithSessionTimeout(pc.Session.Timeout))
+			opts = append(opts, base.WithCleanupInterval(pc.Session.CleanupInterval))
+		}
+		return dingtalk.NewAdapter(cfg, logger, opts...)
 	})
 
 	// WhatsApp
@@ -233,7 +266,12 @@ func Setup(ctx context.Context, logger *slog.Logger, configDir ...string) (http.
 				cfg.APIVersion = pc.WhatsApp.APIVersion
 			}
 		}
-		return whatsapp.NewAdapter(cfg, logger, base.WithoutServer())
+		var opts []base.AdapterOption
+		if pc != nil {
+			opts = append(opts, base.WithSessionTimeout(pc.Session.Timeout))
+			opts = append(opts, base.WithCleanupInterval(pc.Session.CleanupInterval))
+		}
+		return whatsapp.NewAdapter(cfg, logger, opts...)
 	})
 
 	if err := manager.StartAll(ctx); err != nil {

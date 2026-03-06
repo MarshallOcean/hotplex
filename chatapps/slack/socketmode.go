@@ -178,11 +178,57 @@ func (a *Adapter) handleSocketModeMessageEvent(teamID string, ev *slackevents.Me
 		return
 	}
 
+	// Channel/DM policy check (must happen before GroupPolicy check)
 	if !a.config.ShouldProcessChannel(ev.ChannelType, ev.Channel) {
 		a.Logger().Debug("Channel blocked by policy", "channel_type", ev.ChannelType)
 		return
 	}
 
+	// Group policy check: if GroupPolicy is "mention", only process messages that mention the bot
+	// Note: app_mention events are handled separately by handleAppMentionEvent
+	if (ev.ChannelType == "channel" || ev.ChannelType == "group") && a.config.GroupPolicy == "mention" {
+		if !a.config.ContainsBotMention(ev.Text) {
+			a.Logger().Debug("Message ignored - bot not mentioned", "channel_type", ev.ChannelType, "policy", "mention")
+			return
+		}
+		// Bot is mentioned - skip here, let app_mention handler process it
+		a.Logger().Debug("Skipping 'message' event with mention (handled by 'app_mention')", "ts", ev.TimeStamp)
+		return
+	}
+
+	// Multibot mode: respond if no mentions (broadcast) or mentioned self
+	if (ev.ChannelType == "channel" || ev.ChannelType == "group") && a.config.GroupPolicy == "multibot" {
+		a.Logger().Info("Multibot mode processing",
+			"channel_type", ev.ChannelType,
+			"bot_user_id", a.config.BotUserID,
+			"message_text", ev.Text,
+			"mentioned_users", ExtractMentionedUsers(ev.Text))
+
+		if !a.config.ShouldRespondInMultibotMode(ev.Text) {
+			a.Logger().Info("Message ignored - other bot mentioned", "channel_type", ev.ChannelType, "policy", "multibot")
+			return
+		}
+		// Broadcast response only for top-level channel messages (not threads)
+		// Thread messages are targeted conversations, not broadcasts
+		if a.config.IsBroadcastMessage(ev.Text) && ev.ThreadTimeStamp == "" {
+			threadID := ev.ThreadTimeStamp
+			if threadID == "" {
+				threadID = ev.TimeStamp
+			}
+			a.Logger().Info("Broadcast message - sending polite response", "channel", ev.Channel, "bot_user_id", a.config.BotUserID)
+			response := a.config.GetBroadcastResponse(a.socketModeCtx, ev.Text)
+			_ = a.SendToChannel(a.socketModeCtx, ev.Channel, response, threadID)
+			return
+		}
+		// Thread message without @mention - process normally (it's a targeted conversation)
+		if ev.ThreadTimeStamp != "" {
+			a.Logger().Info("Multibot mode - thread message without @mention, processing", "bot_user_id", a.config.BotUserID, "thread_ts", ev.ThreadTimeStamp)
+		} else {
+			a.Logger().Info("Multibot mode - bot mentioned, processing message", "bot_user_id", a.config.BotUserID)
+		}
+	}
+
+	// Fallback: skip message events with bot mention (handled by app_mention event)
 	if ev.ChannelType != "dm" && a.config.ContainsBotMention(ev.Text) {
 		a.Logger().Debug("Skipping 'message' event with mention (handled by 'app_mention')", "ts", ev.TimeStamp)
 		return
