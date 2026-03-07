@@ -294,12 +294,16 @@ get_latest_version() {
 
     # 方法1: GitHub API
     if command_exists curl; then
-        version=$(curl -fsSL "${GITHUB_API}/${REPO}/releases/latest" 2>/dev/null | grep -oP '"tag_name":\s*"v?\K[^"]+' || true)
-        [[ -n "$version" ]] && { echo "$version"; return 0; }
+        version=$(curl -fsSL "${GITHUB_API}/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/v//' || true)
+        if [[ -n "$version" ]]; then
+            echo "$version"
+            return 0
+        fi
     fi
 
+
     # 方法2: 重定向解析
-    version=$(http_get "https://github.com/${REPO}/releases/latest" 2>/dev/null | grep -oP 'tag/v?\K[^"]+' | head -1 || true)
+    version=$(http_get "https://github.com/${REPO}/releases/latest" 2>/dev/null | grep -oE 'tag/v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's|tag/||' | sed 's|^v||' || true)
     [[ -n "$version" ]] && { echo "$version"; return 0; }
 
     # 方法3: curl 头信息
@@ -316,7 +320,7 @@ get_installed_version() {
     local binary="${1:-${INSTALL_DIR}}/${BINARY_NAME}"
 
     if [[ -x "$binary" ]]; then
-        "$binary" -version 2>/dev/null | head -1 | grep -oP 'v?\d+\.\d+\.\d+' || echo "unknown"
+        "$binary" -version 2>/dev/null | head -1 | sed -E 's/v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/' || echo "unknown"
     fi
 }
 
@@ -443,7 +447,7 @@ test_slack_connection() {
     if echo "$response" | grep -q '"ok":true'; then
         return 0
     else
-        local error=$(echo "$response" | grep -oP '"error":\s*"\K[^"]+' || echo "unknown")
+        local error=$(echo "$response" | grep -oE '"error"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || echo "unknown")
         debug "Slack API 错误: $error"
         return 1
     fi
@@ -523,7 +527,7 @@ parse_args() {
     INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 
     # 冲突检查
-    [[ "$QUIET" == "true" ]] && [[ "$VERBOSE" == "true" ]] && warn "同时设置了 -q 和 -V，忽略 -q"
+    [[ "$QUIET" == "true" ]] && [[ "$VERBOSE" == "true" ]] && warn "同时设置了 -q 和 -V，忽略 -q" || true
 }
 
 # 卸载
@@ -1117,7 +1121,8 @@ security:
 EOF
 
     # 替换工作目录
-    sed -i "s|  work_dir: ~/projects|  work_dir: ${work_dir}|" "$yaml_file"
+    sed -i.bak "s|  work_dir: ~/projects|  work_dir: ${work_dir}|" "$yaml_file"
+    rm -f "${yaml_file}.bak"
 
     success "已生成配置文件: $yaml_file"
 }
@@ -1216,7 +1221,7 @@ generate_config() {
     cat > "$env_file" << EOF
 # ==============================================================================
 # HotPlex 环境配置
-# 生成时间: $(date -Iseconds)
+# 生成时间: $(date '+%Y-%m-%d %H:%M:%S %z')
 # 完整配置参考: https://github.com/hrygo/hotplex/blob/main/.env.example
 # ==============================================================================
 
