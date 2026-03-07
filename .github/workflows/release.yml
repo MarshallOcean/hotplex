@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write  # Required for SBOM/Provenance attestation
 
 jobs:
   goreleaser:
@@ -22,16 +23,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Release Notes
         run: |
@@ -49,3 +40,80 @@ jobs:
           args: release --clean --release-notes=RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/hrygo/hotplex
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Download release assets (linux/amd64)
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: hrygo/hotplex
+          tag: ${{ github.ref_name }}
+          fileName: "hotplex_${{ github.ref_name }}_linux_amd64.tar.gz"
+          outDir: ./dist/linux_amd64
+
+      - name: Download release assets (linux/arm64)
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: hrygo/hotplex
+          tag: ${{ github.ref_name }}
+          fileName: "hotplex_${{ github.ref_name }}_linux_arm64.tar.gz"
+          outDir: ./dist/linux_arm64
+
+      - name: Extract binaries
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist/linux/amd64 dist/linux/arm64
+          tar -xzf ./dist/linux_amd64/hotplex_${VERSION}_linux_amd64.tar.gz -C dist/linux/amd64
+          tar -xzf ./dist/linux_arm64/hotplex_${VERSION}_linux_arm64.tar.gz -C dist/linux/arm64
+
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            HOST_UID=1000
+          sbom: true
+          provenance: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output digest
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: echo "Pushed image digest: $DIGEST"
