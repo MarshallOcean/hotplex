@@ -1,5 +1,53 @@
 # CHANGELOG.md
 
+## [v0.21.1] - 2026-03-07
+
+### 🔧 Patch Release
+
+This release fixes multi-bot volume isolation issues, refactors Docker Compose configuration using YAML anchors, and unifies ChunkMessage implementation across chatapps.
+
+### Fixed
+
+#### Docker Multi-Bot Isolation
+- **Volume Conflict Resolution** - Fixed critical issue where multiple bots mounted the same `projects` directory, causing session conflicts
+- **Hardcoded Paths per Service** - Bot-specific volumes now use hardcoded paths instead of variable substitution (Docker Compose substitutes variables at compose-time, not from service's `env_file`)
+
+### Changed
+
+#### Docker Compose Refactoring
+- **YAML Anchors** - Migrated from deprecated `extends` pattern to YAML anchors (`&anchor`, `*anchor`) for DRY configuration
+- **Comprehensive Documentation** - Added detailed comments explaining architecture, YAML anchor mechanics, build vs image, port binding, and volume types
+- **Makefile Simplification** - Removed complex `COMPOSE_SERVICES` dynamic discovery; now uses `docker compose up -d` directly
+
+#### ChatApps Unification (#225)
+- **ChunkMessage Consolidation** - Slack `chunkMessage` now uses `base.ChunkMessage`, eliminating duplicate code (Issue #186)
+- **Extended Signature Verification** - `base.HMACSHA256Verifier` now supports DingTalk and Feishu signature formats via strategy pattern (Issue #187)
+
+### Added
+
+- **.dockerignore** - Prevents sensitive files (`.env`, credentials, IDE configs) from being included in Docker build context
+- **Gitconfig Setup Script** - `scripts/setup_gitconfig.sh` with input validation and idempotency checks for generating bot git identities
+
+### Technical Notes
+
+```yaml
+# YAML Anchors Example
+x-hotplex-common: &hotplex-common
+  image: ghcr.io/hrygo/hotplex:latest
+  # ... shared config
+
+services:
+  hotplex:
+    <<: *hotplex-common  # Merge shared config
+    build: .              # Override: build from local source
+```
+
+### Reference Commits
+- fb279d4 refactor(docker): migrate to YAML anchors and simplify Makefile
+- a51f64f refactor(docker): improve compose config with YAML anchors
+- aa113d5 fix(docker): fix multi-bot volume isolation in docker-compose
+- 6afd088 refactor(chatapps): 统一 ChunkMessage 和扩展签名验证策略 (#225)
+
 ## [v0.21.0] - 2026-03-06
 
 ### 🚀 Major Feature Release
