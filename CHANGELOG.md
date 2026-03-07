@@ -1,5 +1,18 @@
 # CHANGELOG.md
 
+## [v0.21.3] - 2026-03-07
+
+### 🔧 Patch Release
+
+This release fixes the YAML syntax error that prevented v0.21.2 release workflow from running.
+
+### Fixed
+
+- **YAML Syntax Error** - Fixed colon misinterpretation in `echo "Pushed image digest: $DIGEST"` that caused entire release.yml to fail parsing
+
+### Reference Commits
+- 0cc8494 fix(ci): resolve YAML syntax error in release workflow
+
 ## [v0.21.2] - 2026-03-07
 
 ### 🔧 Patch Release
