@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## [v0.23.3] - 2026-03-08
+
+### 🔧 Patch Release
+
+This release fixes SQLite storage plugin initialization and data persistence issues.
+
+### Fixed
+
+#### 🗄️ SQLite Storage Plugin
+- **Pure-Go Driver** - Switch from `go-sqlite3` (CGO) to `modernc.org/sqlite` for CGO-free Docker builds
+- **Driver Name** - Use correct driver name `sqlite` instead of `sqlite3`
+- **Complete INSERT** - Include all NOT NULL fields in INSERT statement (engine_session_id, provider_session_id, provider_type)
+- **Session Metadata** - Add `updateSessionMeta` function to track session statistics
+
+#### 📂 Path Expansion
+- **Tilde Expansion** - Use `sys.ExpandPath` to resolve `~/.hotplex/` paths correctly
+- **Fixed import cycle** - Use `internal/sys.ExpandPath` instead of `chatapps.ExpandPath`
+
+---
+
 ## [v0.23.2] - 2026-03-08
 
 ### 🔧 Patch Release
