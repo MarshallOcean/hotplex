@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hrygo/hotplex/internal/sys"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // SQLiteStorage SQLite 存储实现
