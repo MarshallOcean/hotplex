@@ -82,8 +82,27 @@ RUN apk add --no-cache \
 # ============================================
 FROM runtime-base AS runtime-tools
 
+# Core development tools
 RUN go install github.com/air-verse/air@latest && \
-    go install github.com/go-delve/delve/cmd/dlv@latest
+    go install github.com/go-delve/delve/cmd/dlv@latest && \
+    # Code formatting
+    go install golang.org/x/tools/cmd/goimports@latest && \
+    go install mvdan.cc/gofumpt@latest && \
+    # Static analysis
+    go install honnef.co/go/tools/cmd/staticcheck@latest && \
+    # Security scanning
+    go install github.com/securego/gosec/v2/cmd/gosec@latest && \
+    go install golang.org/x/vuln/cmd/govulncheck@latest && \
+    # Code generation
+    go install github.com/golang/mock/mockgen@latest && \
+    go install github.com/josharian/impl@latest && \
+    go install github.com/fatih/gomodifytags@latest && \
+    # Testing
+    go install gotest.tools/gotestsum@latest && \
+    # Utilities
+    go install github.com/segmentio/golines@latest && \
+    go install github.com/kisielk/errcheck@latest && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # ============================================
 # Stage 4: Third-party tools (cached)
