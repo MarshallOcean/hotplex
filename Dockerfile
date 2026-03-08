@@ -97,8 +97,8 @@ RUN ARCH=$(uname -m) && \
     "https://github.com/vi/websocat/releases/download/v1.14.1/websocat.${ARCH}-unknown-linux-musl" && \
     chmod +x /usr/local/bin/websocat
 
-# Install Claude Code (cached - update manually when needed)
-RUN npm install -g @anthropic-ai/claude-code@latest
+# Install Claude Code via official script (recommended)
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # ============================================
 # Stage 5: Final Image
