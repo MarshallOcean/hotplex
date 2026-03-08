@@ -174,7 +174,10 @@ services:
       - "127.0.0.1:18080:8080"
     env_file:
       - .env
-    volumes:
+    #QV|    volumes:
+#BH|      # Shared volumes (common to all bots)
+#PZ|      - ${HOME}/.hotplex:/home/hotplex/.hotplex:rw           # Message DB, configs, logs
+#KQ|      - ${HOME}/.claude:/home/hotplex/.claude:rw             # Session state
       # Shared volumes (common to all bots)
       - ${HOME}/.hotplex:/home/hotplex/.hotplex:rw           # Message DB, configs
       - ${HOME}/.claude:/home/hotplex/.claude:rw             # Session state
