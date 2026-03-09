@@ -38,7 +38,6 @@ Thumbs.db
 # Output Directories
 dist/
 bin/
-build/
 out/
 
 # Go Binaries
