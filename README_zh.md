@@ -1,9 +1,11 @@
 <div align="center">
-  <img src="docs/images/hotplex_beaver_banner.webp" alt="HotPlex" width="100%"/>
+  <img src="docs/images/logo.svg" alt="HotPlex" width="120"/>
 
-  <h1>HotPlex</h1>
+  # HotPlex
 
-  <p><strong>AI 智能体控制平面 — 将 AI CLI 转化为生产级服务</strong></p>
+  **将 AI CLI 转化为生产级服务**
+
+  将强大的 AI CLI（Claude Code、OpenCode）桥接到持久、安全的生产级交互服务。
 
   <p>
     <a href="https://github.com/hrygo/hotplex/releases/latest">
@@ -15,6 +17,12 @@
     <a href="https://goreportcard.com/report/github.com/hrygo/hotplex">
       <img src="https://img.shields.io/badge/go-report-brightgreen?style=flat-square" alt="Go Report">
     </a>
+    <a href="https://github.com/hrygo/hotplex/actions/workflows/test.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/hrygo/hotplex/test.yml?style=flat-square" alt="Tests">
+    </a>
+    <a href="https://codecov.io/gh/hrygo/hotplex">
+      <img src="https://img.shields.io/codecov/c/github/hrygo/hotplex?style=flat-square" alt="Coverage">
+    </a>
     <a href="LICENSE">
       <img src="https://img.shields.io/github/license/hrygo/hotplex?style=flat-square&color=blue" alt="License">
     </a>
@@ -24,11 +32,13 @@
   </p>
 
   <p>
-    <a href="README.md">English</a> •
-    <b>简体中文</b> •
-    <a href="#快速开始">快速开始</a> •
-    <a href="https://hrygo.github.io/hotplex/">文档</a> •
-    <a href="docs/chatapps/slack-setup-beginner_zh.md">Slack 指南</a>
+    <a href="README.md">English</a> ·
+    <b>简体中文</b> ·
+    <a href="#-快速开始">快速开始</a> ·
+    <a href="#-特性">特性</a> ·
+    <a href="#-架构">架构</a> ·
+    <a href="https://hrygo.github.io/hotplex/">文档</a> ·
+    <a href="https://github.com/hrygo/hotplex/discussions">讨论</a>
   </p>
 </div>
 
@@ -36,146 +46,226 @@
 
 ## ⚡ 快速开始
 
-### 前置要求
-
-- **Go**: 1.25+
-- **AI 工具**: 确保已在主机上安装 [Claude Code](https://github.com/anthropics/claude-code) 或 [OpenCode CLI](https://github.com/hrygo/opencode)。
-
-### 安装与运行
-
 ```bash
-# 1. 一键安装
+# 一键安装
 curl -sL https://raw.githubusercontent.com/hrygo/hotplex/main/install.sh | bash
 
-# 2. 启动会话
-hotplexd --config chatapps/configs
+# 或从源码构建
+make build
+
+# 启动 Slack（或其他平台）
+export HOTPLEX_SLACK_BOT_TOKEN=xoxb-...
+export HOTPLEX_SLACK_APP_TOKEN=xapp-...
+./hotplexd --config chatapps/configs/slack.yaml
 ```
 
----
+### 前置要求
 
-## 💎 特性橱窗
-
-![HotPlex Features](docs/images/features.svg)
-
----
-
-## 🎯 我们的定位：AI 智能体“控制平面”
-
-现有的 AI Agent 虽然强大，但往往缺乏生产级服务所需的**运行时稳定性**。HotPlex 通过提供以下能力填补了这一空白：
-
-1.  **进程生命支持**：将瞬时的 CLI 交互转化为持久、有状态的会话。
-2.  **安全性拦截**：为 Shell 指令提供可编程的正则防火墙 (Danger WAF)。
-3.  **高效能复用**：通过优化的进程复用技术，在单台机器上轻松管理数百个并发 AI 会话。
+| 组件 | 版本 |
+| :--- | :--- |
+| Go | 1.25+ |
+| AI CLI | [Claude Code](https://github.com/anthropics/claude-code) 或 [OpenCode](https://github.com/hrygo/opencode) |
 
 ---
 
-## 💡 典型应用场景
+## ✨ 特性
 
-| 场景                     | HotPlex 的价值                                                   |
-| :----------------------- | :--------------------------------------------------------------- |
-| **AI 编程助手**          | 将 AI 直接嵌入 IDE 终端，保持跨会话的历史上下文。                |
-| **自动化运维 Autopilot** | 将系统日志通过管道输入 HotPlex，让 AI 在人工确认下执行修复脚本。 |
-| **智能体总线**           | 在统一的 WebSocket/SSE 网关下管理不同品牌的 AI CLI 工具。        |
-| **企业级 ChatOps**       | 将本地 AI 能力以工业级稳定性接入钉钉、飞书或 Slack。             |
-
----
-
-## 🚀 功能特性
-
-| 特性               | 描述                                                             |
-| ------------------ | ---------------------------------------------------------------- |
-| **会话池**         | 长生命周期 CLI 进程，即时重连                                    |
-| **全双工流**       | 通过 Go channel 实现亚秒级 token 投递                            |
-| **正则 WAF**       | 拦截破坏性命令（`rm -rf /`、`mkfs` 等）                          |
-| **PGID 隔离**      | 干净的进程终止，无僵尸进程                                       |
-| **ChatApps**       | Slack（Block Kit、流式、Assistant Status）、Telegram、飞书、钉钉 |
-| **Go SDK**         | 零开销直接嵌入 Go 应用                                           |
-| **WebSocket 网关** | 通过 `hotplexd` 守护进程实现语言无关访问                         |
-| **OpenTelemetry**  | 内置指标和追踪支持                                               |
+| | |
+| :--- | :--- |
+| 🔄 **会话池** | 长生命周期 CLI 进程，即时重连 |
+| 🌊 **全双工流** | 亚秒级 token 投递 via Go channels |
+| 🛡️ **正则 WAF** | 拦截破坏性命令（`rm -rf /`、`mkfs` 等） |
+| 🔒 **PGID 隔离** | 干净的进程终止，无僵尸进程 |
+| 💬 **多平台** | Slack · Telegram · 飞书 · 钉钉 |
+| 📦 **Go SDK** | 零开销直接嵌入 Go 应用 |
+| 🔌 **WebSocket 网关** | 通过 `hotplexd` 守护进程实现语言无关访问 |
+| 📊 **OpenTelemetry** | 内置指标和追踪支持 |
+| 🐳 **Docker 支持** | 一条命令运行多个隔离机器人 |
 
 ---
 
-## 🏛 架构与安全
+## 🎯 为什么选择 HotPlex？
 
-HotPlex 在高并发会话拓扑之上采用深度防御安全模型。
+> **AI 智能体在生产环境中缺失的控制平面**
 
-![HotPlex 安全架构](docs/images/hotplex-security.svg)
-
-![HotPlex 系统拓扑](docs/images/topology.svg)
-
-| 层级             | 实现                | 防护                          |
-| ---------------- | ------------------- | ----------------------------- |
-| **工具治理**     | `AllowedTools` 配置 | 限制智能体能力                |
-| **危险 WAF**     | 正则拦截            | 阻止 `rm -rf /`、`mkfs`、`dd` |
-| **进程隔离**     | 基于 PGID 终止      | 无孤儿进程                    |
-| **文件系统沙箱** | WorkDir 锁定        | 限制在项目根目录              |
-| **容器沙箱**     | Docker (BaaC) 架构  | 操作系统级隔离与资源限制      |
+| 挑战 | HotPlex 解决方案 |
+| :--- | :--------------- |
+| AI 每次请求都重新启动 | **持久会话** - CLI 保持存活，复用上下文 |
+| 缺乏破坏性命令安全防护 | **正则 WAF** - 可编程防火墙拦截危险指令 |
+| 难以扩展 AI 交互 | **进程复用** - 支持数百个并发会话 |
+| 集成复杂度高 | **ChatApps** - 一个代码库，多个平台 |
+| 企业级安全需求 | **PGID 隔离** + 文件系统沙箱 + 容器隔离 |
 
 ---
 
-## 🛠 使用示例
+## 🏛 架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        ChatApps 层                               │
+│              Slack · Telegram · 飞书 · 钉钉                     │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                      WebSocket 网关                             │
+│                  (hotplexd 守护进程 / Go SDK)                  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                      引擎 / 运行器                              │
+│         I/O 复用 · 会话池 · 事件流                              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        ▼                    ▼                    ▼
+   ┌─────────┐         ┌─────────┐         ┌─────────┐
+   │ Claude  │         │ OpenCode│         │  自定义  │
+   │   CLI   │         │   CLI   │         │ Provider│
+   └─────────┘         └─────────┘         └─────────┘
+```
+
+### 安全层级
+
+| 层级 | 实现方式 |
+| :--- | :------- |
+| 工具治理 | `AllowedTools` 配置 - 限制智能体能力 |
+| 危险 WAF | 正则拦截 - 阻止 `rm -rf /`、`mkfs`、`dd` |
+| 进程隔离 | 基于 PGID 终止 - 无孤儿进程 |
+| 文件系统沙箱 | `WorkDir` 锁定 - 限制在项目根目录 |
+| 容器沙箱 | Docker (BaaS) - 操作系统级隔离与资源限制 |
+
+---
+
+## 📖 使用示例
 
 ### Go SDK
 
 ```go
-import "github.com/hrygo/hotplex"
+import (
+    "context"
+    "fmt"
+    "time"
 
-engine, _ := hotplex.NewEngine(hotplex.EngineOptions{
-    Timeout: 5 * time.Minute,
+    "github.com/hrygo/hotplex"
+    "github.com/hrygo/hotplex/types"
+)
+
+engine, err := hotplex.NewEngine(hotplex.EngineOptions{
+    Timeout:     5 * time.Minute,
+    IdleTimeout: 30 * time.Minute,
 })
+if err != nil {
+    panic(err)
+}
+defer engine.Close()
 
-engine.Execute(ctx, cfg, "重构这个函数", func(event Event) {
-    fmt.Println(event.Content)
+cfg := &types.Config{
+    WorkDir:   "/path/to/project",
+    SessionID: "user-session-123",
+}
+
+engine.Execute(context.Background(), cfg, "重构这个函数", func(eventType string, data any) error {
+    if msg, ok := data.(*types.StreamMessage); ok {
+        fmt.Print(msg.Content) // 流式响应
+    }
+    return nil
 })
 ```
 
-### ChatApps (Slack)
+### Slack 机器人
 
 ```yaml
 # chatapps/configs/slack.yaml
 platform: slack
 mode: socket
-bot_user_id: ${HOTPLEX_SLACK_BOT_USER_ID}
-system_prompt: |
-  你是一个有帮助的编程助手。
+
+provider:
+  type: claude-code
+  default_model: sonnet
+
+engine:
+  work_dir: ~/projects/hotplex
+  timeout: 30m
+  idle_timeout: 1h
+
+security:
+  owner:
+    primary: ${HOTPLEX_SLACK_PRIMARY_OWNER}
+    policy: trusted
+
+assistant:
+  bot_user_id: ${HOTPLEX_SLACK_BOT_USER_ID}
+  dm_policy: allow
+  group_policy: multibot
 ```
 
 ```bash
 export HOTPLEX_SLACK_BOT_USER_ID=B12345
 export HOTPLEX_SLACK_BOT_TOKEN=xoxb-...
 export HOTPLEX_SLACK_APP_TOKEN=xapp-...
-hotplexd --config chatapps/configs
+./hotplexd --config chatapps/configs/slack.yaml
+```
+export HOTPLEX_SLACK_APP_TOKEN=xapp-...
+./hotplexd --config chatapps/configs/slack.yaml
+```
+
+### WebSocket API
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/ws/v1/agent');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.type, data.content);
+};
+
+ws.send(JSON.stringify({
+  type: 'execute',
+  prompt: '你好，AI！'
+}));
 ```
 
 ---
 
-## 📚 文档资源
+## 📚 文档
 
-| 资源                                                         | 描述                            |
-| :----------------------------------------------------------- | :------------------------------ |
-| [架构深度解析](docs/architecture_zh.md)                      | 系统设计、安全协议、会话管理    |
-| [SDK 开发指南](docs/sdk-guide_zh.md)                         | 完整 Go SDK 参考                |
-| [ChatApps 手册](chatapps/README.md)                          | 多平台集成（Slack、钉钉、飞书） |
-| [Docker 多 Bot 部署](docs/docker-multi-bot-deployment_zh.md) | 一键运行多个机器人              |
+| | |
+| :--- | :--- |
+| [🚀 部署指南](https://hrygo.github.io/hotplex/guide/deployment) | Docker、生产环境配置 |
+| [💬 ChatApps 手册](chatapps/README.md) | Slack、飞书、钉钉集成 |
+| [🛠 Go SDK 参考](https://hrygo.github.io/hotplex/sdks/go-sdk) | 完整 SDK 文档 |
+| [🔒 安全指南](https://hrygo.github.io/hotplex/guide/security) | WAF、隔离、最佳实践 |
+| [📊 可观测性](https://hrygo.github.io/hotplex/guide/observability) | 指标、追踪、日志 |
 
 ---
 
-## 🤝 社区与贡献
+## 🤝 贡献
 
-- **反馈问题/建议**：请使用 [GitHub Issues](https://github.com/hrygo/hotplex/issues)。
-- **交流与讨论**：在 [GitHub Discussions](https://github.com/hrygo/hotplex/discussions) 提问或分享想法。
-- **参与贡献**：我们欢迎各种形式的贡献！请确保 CI 通过 (`make lint`, `make test`)。详见 [贡献指南](CONTRIBUTING.md)。
+欢迎贡献代码！请阅读 [贡献指南](CONTRIBUTING.md) 了解更多细节。
+
+```bash
+# 开发环境搭建
+go mod download   # 安装依赖
+make test         # 运行测试
+make lint         # 运行检查器
+make build        # 构建二进制
+
+# 提交 PR
+git checkout -b feat/your-feature
+git commit -m "feat: add awesome feature"
+gh pr create --fill
+```
 
 ---
 
 ## 📄 许可证
 
-采用 [MIT License](LICENSE) 发布。
+MIT License © 2024-present [HotPlex 贡献者](https://github.com/hrygo/hotplex/graphs/contributors)
 
 ---
 
 <div align="center">
-  <img src="docs/images/hotplex_beaver_final.png" alt="HotPlex Mascot" width="120"/>
+  <img src="docs/images/hotplex_beaver_final.png" alt="HotPlex 吉祥物" width="100"/>
   <br/>
-  <i>为 AI 工程化社区倾力构建。</i>
+  <sub>为 AI 工程化社区倾力构建</sub>
 </div>
