@@ -391,6 +391,12 @@ d: ## @docker Lifecycle management (C=<cmd>). C: up, down, restart, logs, health
 			cp configs/chatapps/*.yaml $(HOME)/.hotplex/configs/ ;; \
 		up) \
 			$(MAKE) d C=sync; \
+			IMG=$${HOTPLEX_IMAGE}; \
+			if [ -z "$$IMG" ]; then \
+				IMG=$$(grep "^HOTPLEX_IMAGE=" .env 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//' || echo ""); \
+			fi; \
+			[ -z "$$IMG" ] && IMG="ghcr.io/hrygo/hotplex:latest (default)"; \
+			printf "${PURPLE}🐳 Image: ${BOLD}$$IMG${NC}\n"; \
 			HOST_UID=$(HOST_UID) VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) docker compose up -d ;; \
 		down) \
 			docker compose down --timeout 30 ;; \
@@ -410,6 +416,7 @@ d: ## @docker Lifecycle management (C=<cmd>). C: up, down, restart, logs, health
 				docker exec $$svc nc -zv host.docker.internal 7897 2>&1 | grep -q succeeded && printf "General Proxy OK\n" || printf "General Proxy FAIL\n"; \
 			done ;; \
 		upgrade) \
+			printf "${CYAN}🚀 Pulling latest images...${NC}\n"; \
 			docker compose pull; $(MAKE) d C=restart ;; \
 		clean) \
 			for s in $(VALID_STACKS); do docker rmi -f hotplex:$$s 2>/dev/null || true; done; \
