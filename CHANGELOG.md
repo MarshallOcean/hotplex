@@ -1,5 +1,38 @@
 # CHANGELOG.md
 
+## [v0.26.0] - 2026-03-12
+
+### 🚀 Major Release - Docker 1+n Architecture & Multi-Stack support
+
+This release introduces a fundamentally refactored Docker image hierarchy based on the **1+n architecture** (1 Base + n Stacks), significantly improving build efficiency and providing specialized environments for multiple tech stacks.
+
+### Added
+
+#### 🐳 Docker 1+n Architecture
+- **Hierarchical Build System** - Replaced monolithic Dockerfile with a shared `hotplex:base` image and language-specific stack images.
+- **Language Stacks** - New dedicated images for multiple development environments:
+  - `hotplex:node` - Node.js/TypeScript (v24) optimized environment.
+  - `hotplex:python` - Python (v3.14) optimized environment.
+  - `hotplex:java` - Java (v21) optimized environment.
+  - `hotplex:rust` - Rust (v1.94) optimized environment.
+  - `hotplex:full` - All-in-one environment containing all supported stacks.
+- **Improved Build Performance** - Leverage layer caching across all stacks via the shared base image.
+
+#### 🛠️ Makefile & Automation
+- **New Build Targets** - Added `docker-build-base`, `docker-build-stacks`, `stack-all`, and individual `stack-<lang>` targets.
+- **Unified Build Args** - Centralized proxy and mirror configurations for all Docker builds.
+
+### Changed
+
+#### 📚 Documentation Refactor
+- **1+n UX Guidance** - Updated all deployment guides to promote the 1+n architecture.
+- **Bilingual Updates** - Synchronized changes across `README.md`, `README_zh.md`, `INSTALL.md`, and `docker-deployment.md`.
+
+### Removed
+- **Dockerfile.release** - Removed outdated release-specific Dockerfile in favor of the new stack-based architecture.
+
+---
+
 ## [v0.25.0] - 2026-03-11
 
 ### 🚀 Minor Release - Slack App Home & Platform Cleanup
