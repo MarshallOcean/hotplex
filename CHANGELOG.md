@@ -1,37 +1,20 @@
 # CHANGELOG.md
 
-## [v0.24.2] - 2026-03-11
+## [v0.25.0] - 2026-03-11
 
-### 🚀 Minor Release - Slack App Home Capability Center
+### 🚀 Minor Release - Slack App Home & Platform Cleanup
 
-This release introduces a new Slack App Home-based Capability Center for enhanced task management and user interaction.
+This release introduces a new Slack App Home-based Capability Center, removes deprecated chatapp adapters, and enhances testing infrastructure.
 
 ### Added
 
-#### 🏠 Slack App Home
+#### 🏠 Slack App Home Capability Center
 - **Capability Registry** - New module with capability registry, builder, form, and executor
 - **Capabilities.yaml** - Predefined task templates for common operations
 - **PRD Documentation** - Full documentation for the capability center feature
 - **Intent Confirmation** - Improved case-insensitive intent confirmation
 - **Validation Response** - Proper Slack ViewSubmissionResponse for validation errors
 - **Unit Tests** - Added comprehensive tests (coverage improved from 34.3% to 40.9%)
-
----
-
-## [v0.24.1] - 2026-03-11
-
-### 🔧 Patch Release - Cleanup & Testing Infrastructure
-
-This release removes deprecated chatapp adapters, adds Claude Code skills, and introduces thinking tag verification test scripts.
-
-### Changed
-
-#### 🧹 Code Cleanup
-- **Deprecated Adapters** - Removed unused chatapp adapters (dingtalk, discord, telegram, whatsapp)
-- **Claude Code Skills** - Added skills for container operations, data management, and diagnostics
-- **Docker Configuration** - Updated Dockerfiles and docker-compose configurations
-
-### Added
 
 #### 🧪 Testing Infrastructure
 - **Thinking Tag Verification** - Added test scripts to verify Claude CLI's thinking tag behavior:
@@ -42,6 +25,22 @@ This release removes deprecated chatapp adapters, adds Claude Code skills, and i
 #### 📚 Example Enhancement
 - **Java HTTP Client** - Added Java examples (`SimpleClient.java`, `HotPlexWsClient.java`)
 - **Example Verification** - Verified all Go/Python/Node.js examples compile with current codebase
+
+#### 🤖 Claude Code Skills
+- **Container Operations** - Skill for Docker container lifecycle management
+- **Data Management** - Skill for session and message persistence
+- **Diagnostics** - Skill for health monitoring and debugging
+
+### Changed
+
+#### 🧹 Code Cleanup
+- **Deprecated Adapters Removed** - Removed unused chatapp adapters:
+  - DingTalk (`chatapps/dingtalk/`)
+  - Discord (`chatapps/discord/`)
+  - Telegram (`chatapps/telegram/`)
+  - WhatsApp (`chatapps/whatsapp/`)
+- **Docker Configuration** - Refactored multi-stage builds, added Java/Node/Python variants
+- **Documentation** - Updated bilingual docs, removed obsolete configurations
 
 ---
 
