@@ -1,105 +1,14 @@
 # ==============================================================================
-# HotPlex Docker Compose Deployment
+# 🐳 HotPlex Docker Compose (1+n Architecture)
 # ==============================================================================
 # Quick Start:
-#   make docker-up                                    # 启动所有 Bot
-#   docker compose logs -f hotplex                    # 查看主 Bot 日志
-#   make docker-down                                  # 停止所有 Bot
-#
-# ------------------------------------------------------------------------------
-# Architecture Overview
-# ------------------------------------------------------------------------------
-#   ┌─────────────────────────────────────────────────────────────────────────┐
-#   │  Bot 01 (hotplex)          │  Bot 02 (hotplex-secondary)              │
-#   │  ├─ .env                   │  ├─ .env.secondary                       │
-#   │  ├─ Port: 18080            │  ├─ Port: 18081                          │
-#   │  ├─ projects: BOT_U0A...   │  ├─ projects: BOT_U0A...  (独立目录)     │
-#   │  └─ gitconfig: -hotplex    │  └─ gitconfig: -secondary  (独立配置)    │
-#   └─────────────────────────────────────────────────────────────────────────┘
-#                              │
-#                    ┌─────────┴─────────┐
-#                    │   Shared Resources │
-#                    │   • ~/.hotplex     │  ← Message DB, configs
-#                    │   • ~/.claude      │  ← Session state
-#                    │   • Go cache       │  ← Named volumes
-#                    └───────────────────┘
-#
-# ------------------------------------------------------------------------------
-# Key Concepts
-# ------------------------------------------------------------------------------
-#
-# 1. YAML Anchors (&anchor / *anchor / <<: merge)
-#    ─────────────────────────────────────────────
-#    x-hotplex-common: &hotplex-common   # 定义 anchor（命名模板）
-#      image: xxx
-#      ...
-#
-#    hotplex:
-#      <<: *hotplex-common               # 引用 anchor，合并 map 配置
-#      build: ...                         # 追加/覆盖特定配置
-#
-#    NOTE: YAML anchors only work for maps (<<:), NOT for lists (volumes).
-#          That's why volumes are duplicated per service.
-#
-# 2. build vs image
-#    ─────────────────────────────────────────────
-#    image: ghcr.io/hrygo/hotplex:latest  # 拉取远程预构建镜像
-#    build: .                              # 使用本地代码构建（开发时）
-#
-#    When both exist, `build:` takes priority. The built image is tagged
-#    with the `image:` name. This allows:
-#      - Local dev: builds from your latest code
-#      - CI/CD: uses pre-built image if build context missing
-#
-# 3. Port Binding (127.0.0.1:HOST:CONTAINER)
-#    ─────────────────────────────────────────────
-#    ports:
-#      - "127.0.0.1:18080:8080"  # Only localhost can access (security)
-#      - "18080:8080"             # ⚠️ Exposed on ALL interfaces (avoid)
-#
-# 4. Volume Types
-#    ─────────────────────────────────────────────
-#    - ${HOME}/.hotplex:/home/hotplex/.hotplex:rw    # Host path → container (rw)
-#    - hotplex-go-mod:/home/hotplex/go/pkg/mod:rw   # Named volume (persists)
-#
-# ------------------------------------------------------------------------------
-# Multi-Bot Isolation (CRITICAL)
-# ------------------------------------------------------------------------------
-# Bot-specific volumes MUST be defined inline per-service, NOT via variables.
-#
-# WHY: Docker Compose substitutes ${VAR} at compose-time from shell/default .env,
-#      NOT from each service's env_file. Using shared variables would cause all
-#      bots to mount the same directory, leading to session conflicts.
-#
-# WRONG (will cause conflicts):
-#   - ${HOTPLEX_PROJECTS_DIR}:/home/hotplex/projects   # Same for all bots!
-#
-# CORRECT (hardcoded per service):
-#   hotplex:
-#     volumes:
-#       - ${HOME}/.slack/BOT_U0AHRCL1KCM:/home/hotplex/projects
-#   hotplex-secondary:
-#     volumes:
-#       - ${HOME}/.slack/BOT_U0AJVRH4YF6:/home/hotplex/projects
-#
-# ------------------------------------------------------------------------------
-# Adding a New Bot
-# ------------------------------------------------------------------------------
-# 1. Copy hotplex-secondary service block, rename to hotplex-tertiary
-# 2. Create .env.tertiary with unique:
-#    - HOTPLEX_SLACK_BOT_USER_ID
-#    - HOTPLEX_SLACK_BOT_TOKEN
-#    - HOTPLEX_SLACK_APP_TOKEN
-# 3. Update volumes to use new bot's directory:
-#    - ${HOME}/.slack/BOT_XXXXXXXXXX:/home/hotplex/projects
-#    - ${HOME}/.gitconfig-hotplex-tertiary:/home/hotplex/.gitconfig
-# 4. Add to scripts/setup_gitconfig.sh BOT_CONFIGS array
-# 5. Run: ./scripts/setup_gitconfig.sh
+#   make docker-up      # Start all bots
+#   make docker-logs    # View logs
+#   make docker-down    # Stop all bots
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# YAML Anchors for DRY Configuration
-# These define shared settings that services can inherit via <<: *anchor
+# 🛠️ Common Configurations (YAML Anchors)
 # ------------------------------------------------------------------------------
 x-hotplex-common: &hotplex-common
   image: ghcr.io/hrygo/hotplex:latest
