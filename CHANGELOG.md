@@ -1,5 +1,23 @@
 # CHANGELOG.md
 
+## [v0.24.2] - 2026-03-11
+
+### 🚀 Minor Release - Slack App Home Capability Center
+
+This release introduces a new Slack App Home-based Capability Center for enhanced task management and user interaction.
+
+### Added
+
+#### 🏠 Slack App Home
+- **Capability Registry** - New module with capability registry, builder, form, and executor
+- **Capabilities.yaml** - Predefined task templates for common operations
+- **PRD Documentation** - Full documentation for the capability center feature
+- **Intent Confirmation** - Improved case-insensitive intent confirmation
+- **Validation Response** - Proper Slack ViewSubmissionResponse for validation errors
+- **Unit Tests** - Added comprehensive tests (coverage improved from 34.3% to 40.9%)
+
+---
+
 ## [v0.24.1] - 2026-03-11
 
 ### 🔧 Patch Release - Cleanup & Testing Infrastructure
