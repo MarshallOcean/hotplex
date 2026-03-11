@@ -6,6 +6,8 @@ on:
     paths:
       - 'docker/Dockerfile*'
       - 'docker-entrypoint.sh'
+      - 'Makefile'
+      - 'docker-compose.yml'
       - '.github/workflows/docker-publish.yml'
     tags: [ 'v*' ]
   schedule:
